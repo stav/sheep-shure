@@ -96,15 +96,17 @@ export function AppLayout() {
                     to={item.to}
                     className={({ isActive }) =>
                       cn(
-                        "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
                         isActive
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       )
                     }
                   >
-                    <item.icon className="h-5 w-5 shrink-0" />
-                    {!sidebarCollapsed && <span>{item.label}</span>}
+                    <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+                      <item.icon className="h-5 w-5 shrink-0" />
+                      {!sidebarCollapsed && <span>{item.label}</span>}
+                    </span>
                   </NavLink>
                 </TooltipTrigger>
                 {sidebarCollapsed && (
@@ -124,15 +126,17 @@ export function AppLayout() {
                   to="/settings"
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                     )
                   }
                 >
-                  <Settings className="h-5 w-5 shrink-0" />
-                  {!sidebarCollapsed && <span>Settings</span>}
+                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+                    <Settings className="h-5 w-5 shrink-0" />
+                    {!sidebarCollapsed && <span>Settings</span>}
+                  </span>
                 </NavLink>
               </TooltipTrigger>
               {sidebarCollapsed && (
@@ -145,12 +149,14 @@ export function AppLayout() {
                 <button
                   onClick={handleLogout}
                   className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors w-full",
+                    "block rounded-md px-3 py-2 text-sm font-medium transition-colors w-full text-left",
                     "text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   )}
                 >
-                  <LogOut className="h-5 w-5 shrink-0" />
-                  {!sidebarCollapsed && <span>Logout</span>}
+                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+                    <LogOut className="h-5 w-5 shrink-0" />
+                    {!sidebarCollapsed && <span>Logout</span>}
+                  </span>
                 </button>
               </TooltipTrigger>
               {sidebarCollapsed && (
