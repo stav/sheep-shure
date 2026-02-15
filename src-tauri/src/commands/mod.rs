@@ -1,6 +1,7 @@
 pub mod auth_commands;
 pub mod carrier_commands;
 pub mod client_commands;
+pub mod conversation_commands;
 pub mod enrollment_commands;
 pub mod import_commands;
 pub mod report_commands;
@@ -9,6 +10,7 @@ pub mod settings_commands;
 pub use auth_commands::*;
 pub use carrier_commands::*;
 pub use client_commands::*;
+pub use conversation_commands::*;
 pub use enrollment_commands::*;
 pub use import_commands::*;
 pub use report_commands::*;

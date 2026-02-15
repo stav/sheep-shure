@@ -122,3 +122,130 @@ export interface EnrollmentListItem {
   effective_date?: string;
   termination_date?: string;
 }
+
+// ── Conversations ────────────────────────────────────────────────────────────
+
+export type ConversationStatus = "OPEN" | "CLOSED" | "ARCHIVED";
+export type EntryType = "CALL" | "EMAIL" | "MEETING" | "SMS" | "NOTE" | "SYSTEM";
+export type CallDirection = "INBOUND" | "OUTBOUND";
+export type CallOutcome = "ANSWERED" | "NO_ANSWER" | "VOICEMAIL" | "BUSY" | "CALLBACK_REQUESTED" | "WRONG_NUMBER";
+export type MeetingType = "IN_PERSON" | "VIDEO" | "PHONE";
+
+export interface Conversation {
+  id: string;
+  client_id: string;
+  title: string;
+  status: ConversationStatus;
+  is_pinned: number;
+  is_active: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ConversationListItem {
+  id: string;
+  client_id: string;
+  title: string;
+  status: ConversationStatus;
+  is_pinned: number;
+  entry_count: number;
+  last_entry_at?: string;
+  created_at?: string;
+}
+
+export interface ConversationEntry {
+  id: string;
+  conversation_id: string;
+  client_id: string;
+  entry_type: EntryType;
+  subject?: string;
+  body?: string;
+  occurred_at?: string;
+  follow_up_date?: string;
+  follow_up_note?: string;
+  call_direction?: CallDirection;
+  call_duration?: number;
+  call_outcome?: CallOutcome;
+  call_phone_number?: string;
+  meeting_location?: string;
+  meeting_type?: MeetingType;
+  email_to?: string;
+  email_from?: string;
+  system_event_type?: string;
+  system_event_data?: string;
+  is_active: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TimelineEntry {
+  id: string;
+  conversation_id: string;
+  conversation_title: string;
+  client_id: string;
+  entry_type: EntryType;
+  subject?: string;
+  body?: string;
+  occurred_at?: string;
+  follow_up_date?: string;
+  follow_up_note?: string;
+  call_direction?: CallDirection;
+  call_duration?: number;
+  call_outcome?: CallOutcome;
+  call_phone_number?: string;
+  meeting_location?: string;
+  meeting_type?: MeetingType;
+  email_to?: string;
+  email_from?: string;
+  system_event_type?: string;
+  system_event_data?: string;
+  created_at?: string;
+}
+
+export interface CreateConversationInput {
+  client_id: string;
+  title: string;
+}
+
+export interface UpdateConversationInput {
+  title?: string;
+  status?: ConversationStatus;
+  is_pinned?: number;
+  is_active?: number;
+}
+
+export interface CreateConversationEntryInput {
+  conversation_id: string;
+  client_id: string;
+  entry_type: EntryType;
+  subject?: string;
+  body?: string;
+  occurred_at?: string;
+  follow_up_date?: string;
+  follow_up_note?: string;
+  call_direction?: CallDirection;
+  call_duration?: number;
+  call_outcome?: CallOutcome;
+  call_phone_number?: string;
+  meeting_location?: string;
+  meeting_type?: MeetingType;
+  email_to?: string;
+  email_from?: string;
+}
+
+export interface UpdateConversationEntryInput {
+  subject?: string;
+  body?: string;
+  occurred_at?: string;
+  follow_up_date?: string;
+  follow_up_note?: string;
+  call_direction?: CallDirection;
+  call_duration?: number;
+  call_outcome?: CallOutcome;
+  call_phone_number?: string;
+  meeting_location?: string;
+  meeting_type?: MeetingType;
+  email_to?: string;
+  email_from?: string;
+  is_active?: number;
+}

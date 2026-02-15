@@ -7,10 +7,16 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/v001_initial.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/v001_initial.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/v002_conversations.sql"),
+    },
+];
 
 /// Run all pending migrations against the database.
 /// Uses PRAGMA user_version to track which migrations have been applied.

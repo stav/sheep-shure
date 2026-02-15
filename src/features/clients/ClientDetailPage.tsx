@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard } from "lucide-react";
+import { ClientEngagementSection } from "@/features/engagement";
 
 function Field({ label, value }: { label: string; value?: string | number | boolean | null }) {
   let display: string;
@@ -190,6 +191,11 @@ export function ClientDetailPage() {
           <p className="text-sm text-muted-foreground">No enrollments found.</p>
         )}
       </div>
+
+      <Separator />
+
+      {/* Engagement */}
+      <ClientEngagementSection clientId={client.id} />
 
       {/* Metadata */}
       <div className="text-xs text-muted-foreground">

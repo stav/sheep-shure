@@ -47,7 +47,8 @@ pub fn delete_client(id: String, state: State<'_, DbState>) -> Result<(), String
 pub fn delete_all_clients(state: State<'_, DbState>) -> Result<serde_json::Value, String> {
     state.with_conn(|conn| {
         // Delete related data first (foreign key children)
-        conn.execute("DELETE FROM notes WHERE client_id IN (SELECT id FROM clients)", [])?;
+        conn.execute("DELETE FROM conversation_entries WHERE client_id IN (SELECT id FROM clients)", [])?;
+        conn.execute("DELETE FROM conversations WHERE client_id IN (SELECT id FROM clients)", [])?;
         conn.execute("DELETE FROM enrollments WHERE client_id IN (SELECT id FROM clients)", [])?;
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM clients", [], |r| r.get(0))
             .unwrap_or(0);
