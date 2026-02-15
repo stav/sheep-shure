@@ -1,0 +1,218 @@
+Perfect. Below is a **structured, detailed prompt** you can paste directly into Claude (or any coding AI). It reflects everything we discussed — but in a clean, modern, build-ready way.
+
+---
+
+# PROMPT FOR CLAUDE
+
+I want to build a modern, local-first desktop application for Medicare insurance agents to manage their Book of Business (client portfolio).
+
+This tool is initially for my personal use but should be architected in a way that allows future commercialization (SaaS subscription model with optional cloud features).
+
+Please design the architecture and generate an implementation plan.
+
+---
+
+## 🎯 CORE GOAL (Version 1 – Local First)
+
+Build a desktop app that:
+
+1. Runs entirely locally on the agent’s machine.
+2. Stores all client data locally (no mandatory cloud storage).
+3. Imports client data easily from:
+
+   * Excel (.xlsx)
+   * CSV
+   * Potential future CRM exports (design import layer modularly)
+
+The goal is for agents to NEVER feel like they are giving away their book of business.
+
+---
+
+## 🧱 CORE FEATURES (V1)
+
+### 1. Portfolio Dashboard (Home Screen)
+
+When opening the app, show:
+
+* Total active clients
+* New clients added this month
+* Clients lost this month
+* Pending disenrollments (if available)
+* Breakdown by:
+
+  * Plan type (MAPD, D-SNP, etc.)
+  * Carrier
+  * Zip code
+* Visual summary (charts/graphs)
+
+This should feel modern and clean — not like 1990s insurance software.
+
+---
+
+### 2. Client Detail View
+
+For each client:
+
+* Name
+* DOB
+* Plan name
+* Carrier
+* Effective date
+* Status (Active / Pending / Disenrolled)
+* Notes
+* Commission tracking field (future expansion-ready)
+
+Design data schema cleanly and extensibly.
+
+---
+
+### 3. Smart Reporting Engine
+
+Allow agents to generate reports such as:
+
+* All D-SNP clients
+* All clients in ZIP code X
+* Clients added in last 30 days
+* Clients by carrier
+* Disenrollments in last 60 days
+
+Reports should:
+
+* Be exportable to PDF
+* Be exportable to Excel
+* Be printable
+
+Design filtering logic cleanly.
+
+---
+
+## 🔐 SECURITY REQUIREMENTS
+
+* Local database encryption (at rest)
+* No data leaves device in V1
+* Secure authentication to open app (local login / password)
+* Architecture must allow HIPAA-compliant expansion later
+
+---
+
+## 💰 FUTURE EXPANSION (Design For This Now)
+
+Even if not implemented in V1, the architecture should allow:
+
+### 1. Commission Tracking Module
+
+* Track commissions by carrier
+* Track expected vs received
+* Detect missing payments
+* Reconciliation tools
+
+### 2. Carrier API Integrations
+
+Design abstraction layer for:
+
+* Connecting to carrier systems (Aetna, Anthem, etc.)
+* Handling messy legacy systems
+* API key storage securely
+* Future automation of:
+
+  * Real-time status updates
+  * Disenrollment detection
+
+### 3. Optional Cloud Sync (Paid Tier)
+
+Future model:
+
+Base Tier:
+
+* Fully local-only
+
+Premium Tier:
+
+* Secure encrypted cloud sync
+* Mobile access
+* Cross-device access
+
+Cloud must be:
+
+* End-to-end encrypted
+* Agents maintain ownership of data
+* Clear trust architecture
+
+---
+
+## 💳 Subscription & Licensing Model
+
+App should:
+
+* Run locally
+* Require periodic online license verification
+* Disable if subscription inactive
+* Never upload book of business for license check
+
+Think Lightroom-style subscription model.
+
+---
+
+I'd like to make sure we have the following features:
+
+Book-of-business status checker
+Commission data scraper
+Medicare plan data viewer
+Medicare CRM
+Medicare/Medicaid eligibility checker
+
+---
+
+## 🧠 UX Requirements
+
+* Clean modern UI
+* Extremely simple for non-tech-savvy agents
+* Fast search
+* Fast filtering
+* Minimal clicks
+* Zero “insurance legacy software” feel
+
+---
+
+## 🏗 TECH STACK (Recommend)
+
+Please propose:
+
+* Best framework for local desktop app:
+
+  * Electron?
+  * Tauri?
+  * Native?
+* Best local database:
+
+  * SQLite?
+* Encryption approach
+* Licensing verification architecture
+* Clean modular structure for scaling into SaaS later
+
+Explain pros and cons of each decision.
+
+---
+
+## 🚀 Deliverables I Want From You
+
+1. Proposed technical architecture
+2. Database schema
+3. Modular folder structure
+4. Step-by-step build plan
+5. Future SaaS scaling roadmap
+6. Security considerations checklist
+
+Be opinionated. Challenge bad assumptions. Suggest improvements.
+
+This must be designed as a serious commercial-grade product, not a hobby script.
+
+---
+
+If you'd like, next we can:
+
+* Refine the monetization strategy
+* Decide exact tech stack
+* Or design the MVP database schema together
+
+You're thinking in the right direction — now we make it sharp.

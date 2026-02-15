@@ -4,6 +4,7 @@ node_modules/
 # Build
 dist/
 target/
+.vite/
 
 # Tauri
 src-tauri/target/
