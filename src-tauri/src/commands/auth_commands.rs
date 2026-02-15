@@ -10,13 +10,18 @@ pub fn check_first_run(app_data_dir: State<'_, AppDataDir>) -> Result<bool, Stri
 }
 
 #[tauri::command]
-pub fn create_account(
+pub async fn create_account(
     password: String,
     app_data_dir: State<'_, AppDataDir>,
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let conn = auth_service::create_database(&app_data_dir.0, &password)
-        .map_err(|e| e.to_string())?;
+    let data_dir = app_data_dir.0.clone();
+    let conn = tauri::async_runtime::spawn_blocking(move || {
+        auth_service::create_database(&data_dir, &password)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     db_state.set_connection(conn).map_err(|e| e.to_string())?;
 
@@ -24,13 +29,18 @@ pub fn create_account(
 }
 
 #[tauri::command]
-pub fn login(
+pub async fn login(
     password: String,
     app_data_dir: State<'_, AppDataDir>,
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let conn = auth_service::unlock_database(&app_data_dir.0, &password)
-        .map_err(|e| e.to_string())?;
+    let data_dir = app_data_dir.0.clone();
+    let conn = tauri::async_runtime::spawn_blocking(move || {
+        auth_service::unlock_database(&data_dir, &password)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
 
     db_state.set_connection(conn).map_err(|e| e.to_string())?;
 

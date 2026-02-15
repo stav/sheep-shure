@@ -59,12 +59,8 @@ pub fn unlock_database(app_data_dir: &Path, password: &str) -> Result<Connection
     // Derive key
     let key = derive_key(password, &salt)?;
 
-    // Try to open DB - if password is wrong, SQLCipher will fail
+    // Try to open DB - if password is wrong, open_encrypted_db returns "Invalid password"
     let conn = open_encrypted_db(app_data_dir, &key)?;
-
-    // Verify we can actually read from the DB (wrong key = "not a database" error)
-    conn.execute_batch("SELECT count(*) FROM sqlite_master;")
-        .map_err(|_| AppError::Auth("Invalid password".to_string()))?;
 
     // Run any pending migrations (for upgrades)
     migrations::run_migrations(&conn)?;
@@ -122,6 +118,10 @@ fn open_encrypted_db(app_data_dir: &Path, key: &[u8]) -> Result<Connection, AppE
     let hex_key = hex_encode(key);
     conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex_key))
         .map_err(|e| AppError::Database(format!("Failed to set encryption key: {}", e)))?;
+
+    // Verify the key is correct before proceeding
+    conn.execute_batch("SELECT count(*) FROM sqlite_master;")
+        .map_err(|_| AppError::Auth("Invalid password".to_string()))?;
 
     // Enable WAL mode and foreign keys
     conn.execute_batch("PRAGMA journal_mode=WAL;")

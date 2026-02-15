@@ -64,21 +64,25 @@ export function LoginPage() {
       }
     }
 
+    setError("");
     setIsSubmitting(true);
 
+    // Let the browser paint the spinner before the heavy IPC call
+    await new Promise((r) => requestAnimationFrame(r));
+
     try {
-      if (isFirstRun) {
-        await tauriInvoke("create_account", { password });
-        toast.success("Account created successfully");
-      } else {
-        await tauriInvoke("login", { password });
-      }
+      const minDelay = new Promise((r) => setTimeout(r, 400));
+      const op = isFirstRun
+        ? tauriInvoke("create_account", { password })
+        : tauriInvoke("login", { password });
+      const [result] = await Promise.allSettled([op, minDelay]);
+      if (result.status === "rejected") throw result.reason;
+      if (isFirstRun) toast.success("Account created successfully");
       setAuthenticated(true);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       const msg = typeof err === "string" ? err : "Authentication failed";
       setError(msg);
-      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -167,9 +171,9 @@ export function LoginPage() {
               </div>
             )}
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            <p className={`text-sm text-destructive min-h-[1.25rem] ${error ? "visible" : "invisible"}`}>
+              {error || "\u00A0"}
+            </p>
 
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? (
