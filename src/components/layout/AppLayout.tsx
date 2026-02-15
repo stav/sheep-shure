@@ -88,81 +88,108 @@ export function AppLayout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1 p-2">
-            {navItems.map((item) => (
-              <Tooltip key={item.to}>
-                <TooltipTrigger asChild>
-                  <NavLink
-                    to={item.to}
-                    className={({ isActive }) =>
-                      cn(
-                        "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      )
-                    }
-                  >
-                    <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
-                      <item.icon className="h-5 w-5 shrink-0" />
-                      {!sidebarCollapsed && <span>{item.label}</span>}
-                    </span>
-                  </NavLink>
-                </TooltipTrigger>
-                {sidebarCollapsed && (
-                  <TooltipContent side="right">{item.label}</TooltipContent>
-                )}
-              </Tooltip>
-            ))}
+          <nav className="flex flex-1 flex-col gap-1 p-2">
+            {navItems.map((item) => {
+              const link = (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    cn(
+                      "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    )
+                  }
+                >
+                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+                    <item.icon className="h-5 w-5 shrink-0" />
+                    {!sidebarCollapsed && <span>{item.label}</span>}
+                  </span>
+                </NavLink>
+              );
+              if (sidebarCollapsed) {
+                return (
+                  <Tooltip key={item.to}>
+                    <TooltipTrigger asChild>{link}</TooltipTrigger>
+                    <TooltipContent side="right">{item.label}</TooltipContent>
+                  </Tooltip>
+                );
+              }
+              return link;
+            })}
           </nav>
 
           <Separator />
 
           {/* Settings link at bottom */}
-          <div className="p-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <NavLink
-                  to="/settings"
-                  className={({ isActive }) =>
-                    cn(
-                      "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )
-                  }
-                >
-                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
-                    <Settings className="h-5 w-5 shrink-0" />
-                    {!sidebarCollapsed && <span>Settings</span>}
-                  </span>
-                </NavLink>
-              </TooltipTrigger>
-              {sidebarCollapsed && (
+          <div className="flex flex-col gap-1 p-2">
+            {sidebarCollapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <NavLink
+                    to="/settings"
+                    className={({ isActive }) =>
+                      cn(
+                        "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      )
+                    }
+                  >
+                    <span className="flex items-center justify-center">
+                      <Settings className="h-5 w-5 shrink-0" />
+                    </span>
+                  </NavLink>
+                </TooltipTrigger>
                 <TooltipContent side="right">Settings</TooltipContent>
-              )}
-            </Tooltip>
+              </Tooltip>
+            ) : (
+              <NavLink
+                to="/settings"
+                className={({ isActive }) =>
+                  cn(
+                    "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  )
+                }
+              >
+                <span className="flex items-center gap-3">
+                  <Settings className="h-5 w-5 shrink-0" />
+                  <span>Settings</span>
+                </span>
+              </NavLink>
+            )}
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={handleLogout}
-                  className={cn(
-                    "block rounded-md px-3 py-2 text-sm font-medium transition-colors w-full text-left",
-                    "text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  )}
-                >
-                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
-                    <LogOut className="h-5 w-5 shrink-0" />
-                    {!sidebarCollapsed && <span>Logout</span>}
-                  </span>
-                </button>
-              </TooltipTrigger>
-              {sidebarCollapsed && (
+            {sidebarCollapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={handleLogout}
+                    className="block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors w-full bg-transparent text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <span className="flex items-center justify-center">
+                      <LogOut className="h-5 w-5 shrink-0" />
+                    </span>
+                  </button>
+                </TooltipTrigger>
                 <TooltipContent side="right">Logout</TooltipContent>
-              )}
-            </Tooltip>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={handleLogout}
+                className="block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors w-full text-left bg-transparent text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              >
+                <span className="flex items-center gap-3">
+                  <LogOut className="h-5 w-5 shrink-0" />
+                  <span>Logout</span>
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Collapse toggle */}
