@@ -48,6 +48,7 @@ pub fn run() {
             commands::create_client,
             commands::update_client,
             commands::delete_client,
+            commands::delete_all_clients,
             commands::get_enrollments,
             commands::create_enrollment,
             commands::update_enrollment,

@@ -1,4 +1,6 @@
+import { useEffect, useMemo } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Users,
@@ -16,6 +18,7 @@ import { useAppStore } from "@/stores/appStore";
 import { useAuthStore } from "@/stores/authStore";
 import { tauriInvoke } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
+import type { DashboardStats } from "@/types";
 import {
   Tooltip,
   TooltipContent,
@@ -58,6 +61,28 @@ export function AppLayout() {
   const pageTitle = getPageTitle(location.pathname);
   useKeyboardShortcuts();
 
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: () => tauriInvoke<DashboardStats>("get_dashboard_stats"),
+    staleTime: 60 * 1000,
+  });
+
+  // Show all nav while loading to avoid flash; once loaded, check client count
+  const hasClients = statsLoading || (stats?.total_active_clients ?? 0) > 0;
+
+  const visibleNavItems = useMemo(
+    () => (hasClients ? navItems : navItems.filter((item) => item.to === "/import")),
+    [hasClients]
+  );
+
+  // Redirect away from data-dependent pages when no clients exist
+  useEffect(() => {
+    if (statsLoading) return;
+    if (!hasClients && location.pathname !== "/import" && location.pathname !== "/settings") {
+      navigate("/import", { replace: true });
+    }
+  }, [hasClients, statsLoading, location.pathname, navigate]);
+
   const handleLogout = async () => {
     try {
       await tauriInvoke("logout");
@@ -89,7 +114,7 @@ export function AppLayout() {
 
           {/* Navigation */}
           <nav className="flex flex-1 flex-col gap-1 p-2">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const link = (
                 <NavLink
                   key={item.to}

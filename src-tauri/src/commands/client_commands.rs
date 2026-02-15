@@ -42,3 +42,18 @@ pub fn delete_client(id: String, state: State<'_, DbState>) -> Result<(), String
         client_service::delete_client(conn, &id)
     }).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn delete_all_clients(state: State<'_, DbState>) -> Result<serde_json::Value, String> {
+    state.with_conn(|conn| {
+        // Delete related data first (foreign key children)
+        conn.execute("DELETE FROM notes WHERE client_id IN (SELECT id FROM clients)", [])?;
+        conn.execute("DELETE FROM enrollments WHERE client_id IN (SELECT id FROM clients)", [])?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM clients", [], |r| r.get(0))
+            .unwrap_or(0);
+        conn.execute("DELETE FROM clients", [])?;
+        // Rebuild FTS index
+        conn.execute("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')", [])?;
+        Ok(serde_json::json!({ "deleted": count }))
+    }).map_err(|e| e.to_string())
+}

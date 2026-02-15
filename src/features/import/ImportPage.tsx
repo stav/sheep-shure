@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { tauriInvoke } from "@/lib/tauri";
 import { toast } from "sonner";
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, ArrowRight, ArrowLeft, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2, ArrowRight, ArrowLeft, Check, Plus, X } from "lucide-react";
 
 type Step = "select" | "map" | "validate" | "result";
 
@@ -22,12 +23,21 @@ interface ValidationResult {
   total: number;
 }
 
+interface ImportRowDetail {
+  label: string;
+  detail: string;
+}
+
 interface ImportResultData {
   inserted: number;
   updated: number;
   skipped: number;
   errors: number;
   total: number;
+  inserted_details: ImportRowDetail[];
+  updated_details: ImportRowDetail[];
+  skipped_details: ImportRowDetail[];
+  errors_details: ImportRowDetail[];
 }
 
 const TARGET_FIELDS = [
@@ -36,7 +46,7 @@ const TARGET_FIELDS = [
   "city", "state", "zip", "county", "mbi", "part_a_date", "part_b_date",
   "plan_name", "carrier_name", "plan_type_code", "effective_date",
   "termination_date", "premium", "contract_number", "pbp_number",
-  "confirmation_number", "lead_source", "dual_status_code", "lis_level", "medicaid_id",
+  "confirmation_number", "lead_source", "dual_status_code", "lis_level", "medicaid_id", "notes",
 ];
 
 export function ImportPage() {
@@ -49,6 +59,8 @@ export function ImportPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [importResult, setImportResult] = useState<ImportResultData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [detailCategory, setDetailCategory] = useState<string | null>(null);
+  const [constantMappings, setConstantMappings] = useState<{ value: string; field: string }[]>([]);
 
   const handleSelectFile = useCallback(async () => {
     try {
@@ -93,9 +105,14 @@ export function ImportPage() {
     if (!filePath || !mapping) return;
     setLoading(true);
     try {
+      const constants: Record<string, string> = {};
+      for (const cm of constantMappings) {
+        if (cm.value && cm.field) constants[cm.field] = cm.value;
+      }
       const result = await tauriInvoke<ImportResultData>("execute_import", {
         filePath,
         columnMapping: mapping,
+        constantValues: Object.keys(constants).length > 0 ? constants : null,
       });
       setImportResult(result);
       setStep("result");
@@ -107,7 +124,7 @@ export function ImportPage() {
     } finally {
       setLoading(false);
     }
-  }, [filePath, mapping, queryClient]);
+  }, [filePath, mapping, constantMappings, queryClient]);
 
   const updateMapping = (sourceCol: string, targetField: string) => {
     setMapping((prev) => {
@@ -209,6 +226,43 @@ export function ImportPage() {
                 );
               })}
             </div>
+
+            {/* Constant value mappings */}
+            {constantMappings.map((cm, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <input
+                  type="text"
+                  value={cm.value}
+                  onChange={(e) => setConstantMappings((prev) => prev.map((m, j) => j === i ? { ...m, value: e.target.value } : m))}
+                  placeholder="Value for all rows..."
+                  className="flex h-9 w-1/3 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                />
+                <ArrowRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <select
+                  value={cm.field}
+                  onChange={(e) => setConstantMappings((prev) => prev.map((m, j) => j === i ? { ...m, field: e.target.value } : m))}
+                  className="flex h-9 w-1/3 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                >
+                  <option value="">-- Select field --</option>
+                  {TARGET_FIELDS.map((f) => (
+                    <option key={f} value={f}>{f.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setConstantMappings((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConstantMappings((prev) => [...prev, { value: "", field: "" }])}
+            >
+              <Plus className="mr-2 h-4 w-4" /> Add Constant Value
+            </Button>
 
             {/* Sample data preview */}
             {parseResult.sample_rows.length > 0 && (
@@ -320,33 +374,62 @@ export function ImportPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 rounded-lg bg-green-50 dark:bg-green-950/30">
-                <div className="text-2xl font-bold text-green-600">{importResult.inserted}</div>
-                <div className="text-sm text-green-600">Inserted</div>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30">
-                <div className="text-2xl font-bold text-blue-600">{importResult.updated}</div>
-                <div className="text-sm text-blue-600">Updated</div>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-gray-50 dark:bg-gray-800/30">
-                <div className="text-2xl font-bold text-gray-600">{importResult.skipped}</div>
-                <div className="text-sm text-gray-600">Skipped</div>
-              </div>
-              <div className="text-center p-4 rounded-lg bg-red-50 dark:bg-red-950/30">
-                <div className="text-2xl font-bold text-red-600">{importResult.errors}</div>
-                <div className="text-sm text-red-600">Errors</div>
-              </div>
+              {([
+                { key: "inserted", label: "Inserted", count: importResult.inserted, bg: "bg-green-50 dark:bg-green-950/30", text: "text-green-600", hoverBg: "hover:bg-green-100 dark:hover:bg-green-950/50" },
+                { key: "updated", label: "Updated", count: importResult.updated, bg: "bg-blue-50 dark:bg-blue-950/30", text: "text-blue-600", hoverBg: "hover:bg-blue-100 dark:hover:bg-blue-950/50" },
+                { key: "skipped", label: "Skipped", count: importResult.skipped, bg: "bg-gray-50 dark:bg-gray-800/30", text: "text-gray-600", hoverBg: "hover:bg-gray-100 dark:hover:bg-gray-800/50" },
+                { key: "errors", label: "Errors", count: importResult.errors, bg: "bg-red-50 dark:bg-red-950/30", text: "text-red-600", hoverBg: "hover:bg-red-100 dark:hover:bg-red-950/50" },
+              ] as const).map(({ key, label, count, bg, text, hoverBg }) => (
+                <div
+                  key={key}
+                  onClick={count > 0 ? () => setDetailCategory(key) : undefined}
+                  className={`text-center p-4 rounded-lg ${bg} ${count > 0 ? `${hoverBg} cursor-pointer transition-colors` : "opacity-60"}`}
+                >
+                  <div className={`text-2xl font-bold ${text}`}>{count}</div>
+                  <div className={`text-sm ${text}`}>{label}</div>
+                </div>
+              ))}
             </div>
+
+            <p className="text-xs text-muted-foreground">Click a box to see per-row details</p>
 
             <div className="flex items-center gap-2 pt-4">
               <Button onClick={() => navigate("/clients")}>
                 View Clients
               </Button>
-              <Button variant="outline" onClick={() => { setStep("select"); setFilePath(""); setParseResult(null); setMapping({}); setValidation(null); setImportResult(null); }}>
+              <Button variant="outline" onClick={() => { setStep("select"); setFilePath(""); setParseResult(null); setMapping({}); setValidation(null); setImportResult(null); setConstantMappings([]); }}>
                 Import Another File
               </Button>
             </div>
           </CardContent>
+
+          <Dialog open={detailCategory !== null} onOpenChange={(open) => { if (!open) setDetailCategory(null); }}>
+            <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="capitalize">{detailCategory} Details</DialogTitle>
+                <DialogDescription>
+                  {detailCategory && importResult[`${detailCategory}_details` as keyof ImportResultData] ?
+                    `${(importResult[`${detailCategory}_details` as keyof ImportResultData] as ImportRowDetail[]).length} rows` : ""}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="overflow-y-auto min-h-0 -mx-6 px-6">
+                {detailCategory && (() => {
+                  const details = importResult[`${detailCategory}_details` as keyof ImportResultData] as ImportRowDetail[] | undefined;
+                  if (!details || details.length === 0) return <p className="text-sm text-muted-foreground">No details available.</p>;
+                  return (
+                    <div className="rounded border divide-y">
+                      {details.map((row, i) => (
+                        <div key={i} className="px-3 py-2 text-sm">
+                          <span className="font-medium">{row.label}</span>
+                          {row.detail && <span className="text-muted-foreground ml-2">— {row.detail}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </DialogContent>
+          </Dialog>
         </Card>
       )}
     </div>

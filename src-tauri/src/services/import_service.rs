@@ -28,6 +28,12 @@ pub struct ErrorRow {
     pub errors: Vec<String>,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct ImportRowDetail {
+    pub label: String,
+    pub detail: String,
+}
+
 #[derive(serde::Serialize)]
 pub struct ImportResult {
     pub inserted: usize,
@@ -35,6 +41,10 @@ pub struct ImportResult {
     pub skipped: usize,
     pub errors: usize,
     pub total: usize,
+    pub inserted_details: Vec<ImportRowDetail>,
+    pub updated_details: Vec<ImportRowDetail>,
+    pub skipped_details: Vec<ImportRowDetail>,
+    pub error_details: Vec<ImportRowDetail>,
 }
 
 /// Parse a CSV or XLSX file and return headers + sample rows
@@ -192,7 +202,10 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
                 "address1",
                 "street",
                 "street address",
+                "street address 1",
+                "street address1",
                 "address_line1",
+                "street_address1",
             ],
         ),
         (
@@ -204,7 +217,10 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
                 "apt",
                 "suite",
                 "unit",
+                "street address 2",
+                "street address2",
                 "address_line2",
+                "street_address2",
             ],
         ),
         ("city", vec!["city", "town"]),
@@ -337,11 +353,11 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
         ),
         (
             "dual_status_code",
-            vec!["dual status", "dual_status", "dual status code", "dual"],
+            vec!["dual status", "dual_status", "dual status code", "dual", "medicaid level", "medicaid_level"],
         ),
         (
             "lis_level",
-            vec!["lis", "lis level", "lis_level", "low income subsidy"],
+            vec!["lis", "lis level", "lis_level", "low income subsidy", "lis copay level", "lis_copay_level"],
         ),
         (
             "medicaid_id",
@@ -351,6 +367,10 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
                 "medicaid number",
                 "medicaid",
             ],
+        ),
+        (
+            "notes",
+            vec!["notes", "note", "comments", "comment", "remarks"],
         ),
     ]);
 
@@ -436,22 +456,40 @@ pub fn execute_import(
     rows: &[Vec<String>],
     headers: &[String],
     mapping: &HashMap<String, String>,
+    constant_values: &HashMap<String, String>,
 ) -> Result<ImportResult, AppError> {
     let mut inserted = 0usize;
     let mut updated = 0usize;
     let mut skipped = 0usize;
     let mut errors = 0usize;
+    let mut inserted_details = Vec::new();
+    let mut updated_details = Vec::new();
+    let mut skipped_details = Vec::new();
+    let mut error_details = Vec::new();
 
-    for row in rows {
-        match import_single_row(conn, row, headers, mapping) {
+    for (i, row) in rows.iter().enumerate() {
+        match import_single_row(conn, row, headers, mapping, constant_values) {
             Ok(action) => match action {
-                ImportAction::Inserted => inserted += 1,
-                ImportAction::Updated => updated += 1,
-                ImportAction::Skipped => skipped += 1,
+                ImportAction::Inserted { name } => {
+                    inserted += 1;
+                    inserted_details.push(ImportRowDetail { label: name, detail: String::new() });
+                }
+                ImportAction::Updated { name, fields } => {
+                    updated += 1;
+                    updated_details.push(ImportRowDetail { label: name, detail: fields.join(", ") });
+                }
+                ImportAction::Skipped { name } => {
+                    skipped += 1;
+                    skipped_details.push(ImportRowDetail { label: name, detail: "No new data".to_string() });
+                }
             },
             Err(e) => {
                 tracing::warn!("Import row error: {}", e);
                 errors += 1;
+                error_details.push(ImportRowDetail {
+                    label: format!("Row {}", i + 1),
+                    detail: e.to_string(),
+                });
             }
         }
     }
@@ -462,13 +500,17 @@ pub fn execute_import(
         skipped,
         errors,
         total: inserted + updated + skipped + errors,
+        inserted_details,
+        updated_details,
+        skipped_details,
+        error_details,
     })
 }
 
 enum ImportAction {
-    Inserted,
-    Updated,
-    Skipped,
+    Inserted { name: String },
+    Updated { name: String, fields: Vec<String> },
+    Skipped { name: String },
 }
 
 fn import_single_row(
@@ -476,15 +518,18 @@ fn import_single_row(
     row: &[String],
     headers: &[String],
     mapping: &HashMap<String, String>,
+    constant_values: &HashMap<String, String>,
 ) -> Result<ImportAction, AppError> {
     let get_val = |target: &str| -> Option<String> {
-        let idx = find_mapped_index(headers, mapping, target)?;
-        let val = row.get(idx)?.trim().to_string();
-        if val.is_empty() {
-            None
-        } else {
-            Some(val)
+        // Try column mapping first
+        if let Some(idx) = find_mapped_index(headers, mapping, target) {
+            let val = row.get(idx)?.trim().to_string();
+            if !val.is_empty() {
+                return Some(val);
+            }
         }
+        // Fall back to constant value
+        constant_values.get(target).filter(|v| !v.is_empty()).cloned()
     };
 
     let first_name =
@@ -515,11 +560,14 @@ fn import_single_row(
         }
     };
 
+    let client_name = format!("{} {}", first_name, last_name);
+
     if let Some(client_id) = existing_id {
         // Update existing client
         let mut sets = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
+        let mut updated_fields = Vec::new();
 
         macro_rules! set_if {
             ($field:expr, $col:expr) => {
@@ -527,6 +575,7 @@ fn import_single_row(
                     sets.push(format!("{} = ?{}", $col, idx));
                     params.push(Box::new(val));
                     idx += 1;
+                    updated_fields.push($col.to_string());
                 }
             };
         }
@@ -542,9 +591,10 @@ fn import_single_row(
         set_if!("dual_status_code", "dual_status_code");
         set_if!("lis_level", "lis_level");
         set_if!("medicaid_id", "medicaid_id");
+        set_if!("notes", "notes");
 
         if sets.is_empty() {
-            return Ok(ImportAction::Skipped);
+            return Ok(ImportAction::Skipped { name: client_name });
         }
 
         let sql = format!(
@@ -555,14 +605,14 @@ fn import_single_row(
         params.push(Box::new(client_id));
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, refs.as_slice())?;
-        Ok(ImportAction::Updated)
+        Ok(ImportAction::Updated { name: client_name, fields: updated_fields })
     } else {
         // Insert new client
         let id = Uuid::new_v4().to_string();
         conn.execute(
             "INSERT INTO clients (id, first_name, last_name, middle_name, dob, gender, phone, phone2, email,
-             address_line1, address_line2, city, state, zip, county, mbi, lead_source, dual_status_code, lis_level, medicaid_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+             address_line1, address_line2, city, state, zip, county, mbi, lead_source, dual_status_code, lis_level, medicaid_id, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             rusqlite::params![
                 id,
                 first_name,
@@ -583,10 +633,11 @@ fn import_single_row(
                 get_val("lead_source"),
                 get_val("dual_status_code"),
                 get_val("lis_level"),
-                get_val("medicaid_id")
+                get_val("medicaid_id"),
+                get_val("notes")
             ],
         )?;
-        Ok(ImportAction::Inserted)
+        Ok(ImportAction::Inserted { name: client_name })
     }
 }
 

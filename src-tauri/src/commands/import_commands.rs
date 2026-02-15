@@ -35,8 +35,10 @@ pub fn validate_import(
 pub fn execute_import(
     file_path: String,
     column_mapping: HashMap<String, String>,
+    constant_values: Option<HashMap<String, String>>,
     state: State<'_, DbState>,
 ) -> Result<serde_json::Value, String> {
+    let constant_values = constant_values.unwrap_or_default();
     let (headers, all_rows) =
         import_service::get_all_rows(&file_path).map_err(|e| e.to_string())?;
 
@@ -50,6 +52,7 @@ pub fn execute_import(
                 &validation.valid_rows,
                 &headers,
                 &column_mapping,
+                &constant_values,
             )?;
 
             // Log the import
@@ -80,12 +83,25 @@ pub fn execute_import(
                 ],
             )?;
 
+            // Combine execution error details with validation error details
+            let mut all_error_details = result.error_details;
+            for err_row in &validation.error_rows {
+                all_error_details.push(import_service::ImportRowDetail {
+                    label: format!("Row {}", err_row.row_number),
+                    detail: err_row.errors.join("; "),
+                });
+            }
+
             serde_json::to_value(serde_json::json!({
                 "inserted": result.inserted,
                 "updated": result.updated,
                 "skipped": result.skipped,
                 "errors": result.errors + validation.error_rows.len(),
                 "total": result.total + validation.error_rows.len(),
+                "inserted_details": result.inserted_details,
+                "updated_details": result.updated_details,
+                "skipped_details": result.skipped_details,
+                "errors_details": all_error_details,
             }))
             .map_err(|e| crate::error::AppError::Import(e.to_string()))
         })
