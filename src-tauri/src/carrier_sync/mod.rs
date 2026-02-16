@@ -1,5 +1,6 @@
 pub mod caresource;
 pub mod devoted;
+pub mod medmutual;
 
 use async_trait::async_trait;
 
@@ -41,6 +42,7 @@ pub fn get_portal(carrier_id: &str) -> Option<Box<dyn CarrierPortal>> {
     match carrier_id {
         "carrier-devoted" => Some(Box::new(devoted::DevotedPortal)),
         "carrier-caresource" => Some(Box::new(caresource::CareSourcePortal)),
+        "carrier-medmutual" => Some(Box::new(medmutual::MedMutualPortal)),
         _ => None,
     }
 }

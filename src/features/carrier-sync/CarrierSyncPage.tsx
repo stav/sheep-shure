@@ -47,6 +47,12 @@ const CARRIERS: CarrierConfig[] = [
     description: "DestinationRx, REST API",
     status: "available",
   },
+  {
+    id: "carrier-medmutual",
+    name: "Medical Mutual of Ohio",
+    description: "MyBrokerLink, server-rendered",
+    status: "available",
+  },
 ];
 
 type SyncPhase = "idle" | "login" | "fetching" | "processing";
