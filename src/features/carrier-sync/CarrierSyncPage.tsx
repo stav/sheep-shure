@@ -59,6 +59,12 @@ const CARRIERS: CarrierConfig[] = [
     description: "Jarvis portal, REST APIs",
     status: "available",
   },
+  {
+    id: "carrier-humana",
+    name: "Humana",
+    description: "Vantage agent portal",
+    status: "available",
+  },
 ];
 
 type SyncPhase = "idle" | "login" | "fetching" | "processing";

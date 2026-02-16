@@ -1,5 +1,6 @@
 pub mod caresource;
 pub mod devoted;
+pub mod humana;
 pub mod medmutual;
 pub mod uhc;
 
@@ -45,6 +46,7 @@ pub fn get_portal(carrier_id: &str) -> Option<Box<dyn CarrierPortal>> {
         "carrier-caresource" => Some(Box::new(caresource::CareSourcePortal)),
         "carrier-medmutual" => Some(Box::new(medmutual::MedMutualPortal)),
         "carrier-uhc" => Some(Box::new(uhc::UhcPortal)),
+        "carrier-humana" => Some(Box::new(humana::HumanaPortal)),
         _ => None,
     }
 }
