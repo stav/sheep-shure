@@ -1,3 +1,4 @@
+pub mod carrier_sync;
 pub mod commands;
 pub mod db;
 pub mod error;
@@ -73,6 +74,10 @@ pub fn run() {
             commands::get_agent_profile,
             commands::save_agent_profile,
             commands::backup_database,
+            commands::open_carrier_login,
+            commands::sync_carrier_portal,
+            commands::get_carrier_login_url,
+            commands::get_sync_logs,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running SHEEPS application");

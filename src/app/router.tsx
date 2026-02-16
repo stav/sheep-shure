@@ -7,6 +7,7 @@ import { EnrollmentsPage } from "@/features/enrollments";
 import { ImportPage } from "@/features/import";
 import { ReportsPage } from "@/features/reports";
 import { SettingsPage } from "@/features/settings";
+import { CarrierSyncPage } from "@/features/carrier-sync";
 import { useAuthStore } from "@/stores/authStore";
 
 function AuthGuard() {
@@ -32,6 +33,7 @@ export function AppRouter() {
             <Route path="/enrollments" element={<EnrollmentsPage />} />
             <Route path="/import" element={<ImportPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/carrier-sync" element={<CarrierSyncPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
         </Route>

@@ -16,6 +16,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/v002_conversations.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/v003_carrier_sync.sql"),
+    },
 ];
 
 /// Run all pending migrations against the database.

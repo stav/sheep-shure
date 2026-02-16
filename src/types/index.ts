@@ -249,3 +249,43 @@ export interface UpdateConversationEntryInput {
   email_from?: string;
   is_active?: number;
 }
+
+// ── Carrier Sync ──────────────────────────────────────────────────────────────
+
+export interface PortalMember {
+  first_name: string;
+  last_name: string;
+  member_id?: string;
+  plan_name?: string;
+  effective_date?: string;
+  end_date?: string;
+  status?: string;
+}
+
+export interface SyncResult {
+  carrier_name: string;
+  portal_count: number;
+  local_count: number;
+  matched: number;
+  disenrolled: SyncDisenrollment[];
+  new_in_portal: PortalMember[];
+}
+
+export interface SyncDisenrollment {
+  client_name: string;
+  client_id: string;
+  enrollment_id: string;
+  plan_name?: string;
+}
+
+export interface SyncLogEntry {
+  id: string;
+  carrier_id: string;
+  carrier_name?: string;
+  synced_at: string;
+  portal_count: number;
+  matched: number;
+  disenrolled: number;
+  new_found: number;
+  status: string;
+}
