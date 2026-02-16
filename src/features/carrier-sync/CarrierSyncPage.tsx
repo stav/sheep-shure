@@ -42,16 +42,10 @@ const CARRIERS: CarrierConfig[] = [
     status: "available",
   },
   {
-    id: "carrier-alignment",
-    name: "Alignment Healthcare",
-    description: "Azure AD B2C OAuth2",
-    status: "coming_soon",
-  },
-  {
-    id: "carrier-uhc",
-    name: "UnitedHealthcare",
-    description: "Jarvis portal, REST APIs",
-    status: "coming_soon",
+    id: "carrier-caresource",
+    name: "CareSource",
+    description: "DestinationRx, REST API",
+    status: "available",
   },
 ];
 

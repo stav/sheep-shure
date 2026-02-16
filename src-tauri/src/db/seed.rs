@@ -117,6 +117,10 @@ fn seed_carriers(conn: &Connection) -> Result<(), AppError> {
         ("carrier-ss",        "SilverScript",          "SilverScript"),
         ("carrier-devoted",   "Devoted Health",        "Devoted"),
         ("carrier-alignment", "Alignment Healthcare",  "Alignment"),
+        ("carrier-caresource", "CareSource",           "CareSource"),
+        ("carrier-zing",      "Zing Health",           "Zing"),
+        ("carrier-medmutual", "Medical Mutual of Ohio", "MedMutual"),
+        ("carrier-summacare", "SummaCare",             "SummaCare"),
     ];
 
     for (id, name, short_name) in carriers {

@@ -1,3 +1,4 @@
+pub mod caresource;
 pub mod devoted;
 
 use async_trait::async_trait;
@@ -39,6 +40,7 @@ pub trait CarrierPortal: Send + Sync {
 pub fn get_portal(carrier_id: &str) -> Option<Box<dyn CarrierPortal>> {
     match carrier_id {
         "carrier-devoted" => Some(Box::new(devoted::DevotedPortal)),
+        "carrier-caresource" => Some(Box::new(caresource::CareSourcePortal)),
         _ => None,
     }
 }

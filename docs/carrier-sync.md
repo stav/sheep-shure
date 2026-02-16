@@ -150,7 +150,7 @@ Ranked by automation difficulty based on auth complexity and anti-bot measures:
 | Carrier | Portal URL |
 |---------|-----------|
 | Devoted Health | <https://agent.devoted.com/> |
-| CareSource | <https://caresource.callidusinsurance.net/> |
+| CareSource | <https://caresource2.destinationrx.com/PC/Agent/Account/Login> |
 | Medical Mutual of Ohio | <https://mybrokerlink.com/> |
 | SummaCare | <https://www.summacare.com/brokerstorehome> |
 | Alignment Healthcare | TBD |
