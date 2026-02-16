@@ -12,10 +12,14 @@ import {
   ChevronRight,
   LogOut,
   Search,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useThemeStore } from "@/stores/themeStore";
 import { tauriInvoke } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import type { DashboardStats } from "@/types";
@@ -56,6 +60,15 @@ function getPageTitle(pathname: string): string {
 
 export function AppLayout() {
   const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor;
+  const themeLabel = theme === "light" ? "Light" : theme === "dark" ? "Dark" : "System";
+  const cycleTheme = () => {
+    const next = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+    setTheme(next);
+  };
   const location = useLocation();
   const navigate = useNavigate();
   const pageTitle = getPageTitle(location.pathname);
@@ -212,6 +225,32 @@ export function AppLayout() {
                 <span className="flex items-center gap-3">
                   <LogOut className="h-5 w-5 shrink-0" />
                   <span>Logout</span>
+                </span>
+              </button>
+            )}
+
+            {sidebarCollapsed ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={cycleTheme}
+                    className="block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors w-full bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  >
+                    <span className="flex items-center justify-center">
+                      <ThemeIcon className="h-5 w-5 shrink-0" />
+                    </span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{themeLabel}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <button
+                onClick={cycleTheme}
+                className="block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors w-full text-left bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              >
+                <span className="flex items-center gap-3">
+                  <ThemeIcon className="h-5 w-5 shrink-0" />
+                  <span>{themeLabel}</span>
                 </span>
               </button>
             )}

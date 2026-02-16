@@ -12,9 +12,9 @@ interface ConversationListProps {
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  OPEN: { label: "Open", className: "bg-green-100 text-green-700 hover:bg-green-100" },
-  CLOSED: { label: "Closed", className: "bg-gray-100 text-gray-600 hover:bg-gray-100" },
-  ARCHIVED: { label: "Archived", className: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100" },
+  OPEN: { label: "Open", className: "bg-green-100 text-green-700 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/30" },
+  CLOSED: { label: "Closed", className: "bg-gray-100 text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-800" },
+  ARCHIVED: { label: "Archived", className: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400 dark:hover:bg-yellow-900/30" },
 };
 
 function formatRelative(dateStr?: string): string {

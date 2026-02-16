@@ -15,13 +15,13 @@ export function FollowUpBadge({ date, note }: FollowUpBadgeProps) {
   let label: string;
 
   if (isOverdue) {
-    className = "bg-red-100 text-red-700 hover:bg-red-100";
+    className = "bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/30";
     label = `Overdue: ${date}`;
   } else if (isToday) {
-    className = "bg-amber-100 text-amber-700 hover:bg-amber-100";
+    className = "bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/30";
     label = "Follow-up today";
   } else {
-    className = "bg-blue-100 text-blue-700 hover:bg-blue-100";
+    className = "bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/30";
     label = `Follow-up: ${date}`;
   }
 

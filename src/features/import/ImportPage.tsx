@@ -215,7 +215,7 @@ export function ImportPage() {
                     <select
                       value={mapping[header] || ""}
                       onChange={(e) => updateMapping(header, e.target.value)}
-                      className="flex h-9 w-1/3 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                      className="flex h-9 w-1/3 rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm"
                     >
                       <option value="">-- Skip --</option>
                       {TARGET_FIELDS.map((f) => (
@@ -241,7 +241,7 @@ export function ImportPage() {
                 <select
                   value={cm.field}
                   onChange={(e) => setConstantMappings((prev) => prev.map((m, j) => j === i ? { ...m, field: e.target.value } : m))}
-                  className="flex h-9 w-1/3 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  className="flex h-9 w-1/3 rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm"
                 >
                   <option value="">-- Select field --</option>
                   {TARGET_FIELDS.map((f) => (

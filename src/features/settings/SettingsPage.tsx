@@ -6,8 +6,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { tauriInvoke } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Save, Download, Key, User, Loader2, Shield } from "lucide-react";
+import { Save, Download, Key, User, Loader2, Shield, Sun, Moon, Monitor, Palette } from "lucide-react";
+import { useThemeStore } from "@/stores/themeStore";
 
 interface AgentProfile {
   id?: string;
@@ -18,6 +20,47 @@ interface AgentProfile {
   npn?: string;
   agency_name?: string;
   license_state?: string;
+}
+
+const themeOptions = [
+  { value: "light" as const, label: "Light", icon: Sun },
+  { value: "dark" as const, label: "Dark", icon: Moon },
+  { value: "system" as const, label: "System", icon: Monitor },
+];
+
+function AppearanceCard() {
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Palette className="h-5 w-5" /> Appearance
+        </CardTitle>
+        <CardDescription>Choose your preferred color theme</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-3">
+          {themeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTheme(opt.value)}
+              className={cn(
+                "flex flex-col items-center gap-2 rounded-lg border-2 px-6 py-4 transition-colors",
+                theme === opt.value
+                  ? "border-primary bg-primary/5"
+                  : "border-transparent bg-muted/50 hover:bg-muted"
+              )}
+            >
+              <opt.icon className="h-6 w-6" />
+              <span className="text-sm font-medium">{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function SettingsPage() {
@@ -123,6 +166,11 @@ export function SettingsPage() {
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-sm text-muted-foreground">Manage your profile, security, and application settings</p>
       </div>
+
+      {/* Appearance */}
+      <AppearanceCard />
+
+      <Separator />
 
       {/* Agent Profile */}
       <Card>

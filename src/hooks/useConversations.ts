@@ -59,6 +59,8 @@ export function useUpdateConversation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["conversation"] });
+      queryClient.invalidateQueries({ queryKey: ["client_timeline"] });
+      queryClient.invalidateQueries({ queryKey: ["pending_follow_ups"] });
     },
   });
 }
