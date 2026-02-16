@@ -53,6 +53,12 @@ const CARRIERS: CarrierConfig[] = [
     description: "MyBrokerLink, server-rendered",
     status: "available",
   },
+  {
+    id: "carrier-uhc",
+    name: "UnitedHealthcare",
+    description: "Jarvis portal, REST APIs",
+    status: "available",
+  },
 ];
 
 type SyncPhase = "idle" | "login" | "fetching" | "processing";

@@ -7,8 +7,8 @@ Verify your book of business against carrier portals and auto-update enrollment 
 1. **Open Portal Login** -- opens a Tauri webview to the carrier's agent portal
 2. User logs in normally (handles MFA/CAPTCHA naturally since it's a real browser)
 3. **Sync Now** -- injects JavaScript into the webview that:
-   - Fetches the CSRF token via the carrier's API
-   - Paginates through all member data using the browser's own session cookies
+   - Fetches member data using the browser's own session cookies/tokens
+   - Approach varies by carrier: GraphQL API, REST API, or DOM scraping
    - Navigates to `sheeps-sync.localhost/data?members=<json>` on success
 4. The Rust `on_navigation` handler intercepts that URL and emits a Tauri event
 5. The frontend receives the event and calls `process_portal_members`
@@ -46,6 +46,8 @@ Webview (carrier portal)
 |------|---------|
 | `src-tauri/src/carrier_sync/mod.rs` | `CarrierPortal` trait + carrier registry |
 | `src-tauri/src/carrier_sync/devoted.rs` | Devoted Health implementation |
+| `src-tauri/src/carrier_sync/caresource.rs` | CareSource implementation |
+| `src-tauri/src/carrier_sync/medmutual.rs` | Medical Mutual of Ohio implementation |
 | `src-tauri/src/commands/carrier_sync_commands.rs` | Tauri IPC commands |
 | `src-tauri/src/services/carrier_sync_service.rs` | Comparison logic, auto-disenrollment |
 | `src-tauri/src/models/carrier_sync.rs` | `PortalMember`, `SyncResult`, `SyncLogEntry` |
@@ -95,6 +97,50 @@ MBI matching is not used because carrier portal member IDs are internal UUIDs, n
 
 `first_name`, `last_name`, `member_id`, `birth_date`, `status`, `aor_policy_status`, `current_pbp` (plan name, start/end dates), `state`, `city`, `primary_phone`, `email`
 
+## CareSource Implementation
+
+- **Portal**: `https://caresource2.destinationrx.com/PC/Agent/Account/Login`
+- **Platform**: DestinationRx (DRX) SPA
+- **API**: REST on `https://www.drxwebservices.com/spa{year}/v1/` (cross-origin)
+- **Auth**: Bearer JWT token (not cookie-based), cross-origin to `drxwebservices.com`
+- **CSRF**: None required
+- **init_script**: Monkey-patches `fetch` and `XMLHttpRequest` to capture the Bearer JWT and agent GUID from the SPA's own API calls to `drxwebservices.com`
+- **Member endpoint**: `POST /Agent/{agentGUID}/MemberProfileSearch`
+- **Date range limit**: 31-day window per request -- fetch_script iterates from Oct 1 of previous year through today in 31-day chunks, deduplicating by `memberID`
+
+### Request body
+
+```json
+{
+    "applicationStartDate": "2026-01-01T00:00:00.000Z",
+    "applicationEndDate": "2026-01-31T23:59:59.000Z",
+    "enrollmentType": "medicare",
+    "agentReport": true
+}
+```
+
+### Member fields extracted
+
+`firstName`, `lastName`, `memberID`, `enrollments[].plan`, `enrollments[].enrollmentDate`, `carrierStatus`, `state`, `city`, `homePhone`, `primaryEmailAddress`
+
+Note: DOB is not available from this endpoint.
+
+## Medical Mutual of Ohio Implementation
+
+- **Portal**: `https://mybrokerlink.com/`
+- **Platform**: Sitecore CMS, server-rendered HTML
+- **Auth**: Session cookies (same-origin, no interception needed)
+- **CSRF**: None required
+- **Approach**: Pure DOM scraping -- no API calls, no init_script
+- **fetch_script**: Fetches `/mybusiness/bookofbusiness` via AJAX, parses the `#member-table` HTML table using `DOMParser`, extracts data from `td[data-col-name="..."]` selectors
+- **Table ID**: `#member-table` with `data-col-name` attributes on each `<td>`
+
+### Member fields extracted
+
+`Name`, `GroupNumber`, `DateOfBirth`, `MarketSegment`, `EffectiveDate`, `Attention` (status), `State`, `City`, `Phone`, `Email`
+
+Dates are converted from `MM/DD/YYYY` to `YYYY-MM-DD` (ISO) for matching.
+
 ## Adding a New Carrier
 
 1. Create `src-tauri/src/carrier_sync/<carrier>.rs` implementing `CarrierPortal`
@@ -114,13 +160,17 @@ MBI matching is not used because carrier portal member IDs are internal UUIDs, n
 7. Write the `fetch_script` JS that replicates those API calls from within the webview
 8. The webview handles auth naturally (cookies are already present after login)
 
-### Tips from Devoted Implementation
+### Tips from Implementations
 
 - **HttpOnly cookies**: JS can't read them, but `fetch()` from the webview sends them automatically
 - **CSRF tokens**: May need a dedicated API call to obtain (Devoted uses a `CSRFToken` GraphQL query)
 - **Custom headers**: Carrier frameworks often require app-specific headers (e.g. `x-orinoco-portal`)
 - **HAR files**: Export from DevTools Network tab -- invaluable for seeing exact request/response patterns
 - **`sheeps-sync.localhost` callback**: The JS navigates to this fake URL to pass data back to Rust; `on_navigation` intercepts it
+- **Cross-origin APIs**: Some portals (CareSource/DRX) use a different domain for the API. Use `init_script` to monkey-patch `fetch`/`XHR` and capture Bearer tokens from the SPA's own calls
+- **Date range limits**: Some APIs limit query windows (CareSource: 31 days). Iterate through multiple date ranges and deduplicate by member ID
+- **Server-rendered HTML**: The simplest portals (Medical Mutual) render everything in HTML. Use `DOMParser` to parse the page and extract data from the DOM -- no API interception needed
+- **Seed data**: New carriers must exist in `carriers` table. `seed_data()` runs on both create and unlock (INSERT OR IGNORE), so new carriers are added on next login
 
 ## Carrier Difficulty Rankings
 
@@ -129,8 +179,8 @@ Ranked by automation difficulty based on auth complexity and anti-bot measures:
 | Rank | Carrier | Difficulty | Notes | Status |
 |------|---------|-----------|-------|--------|
 | 1 | Devoted Health | Easiest | React SPA ("Orinoco"), GraphQL API, no anti-bot | **Done** |
-| 2 | CareSource | Easy | SAP ICM (Callidus), NPN login, no bot detection | -- |
-| 3 | Medical Mutual of Ohio | Easy | MyBrokerLink, server-rendered, SSO support, no bot detection | -- |
+| 2 | CareSource | Easy | DestinationRx SPA, cross-origin REST API, Bearer JWT | **Done** |
+| 3 | Medical Mutual of Ohio | Easy | MyBrokerLink, Sitecore, server-rendered HTML table | **Done** |
 | 4 | SummaCare | Easy | CMS/Sitecore, NPN login, no bot detection at all | -- |
 | 5 | Alignment Healthcare | Easy | React SPA, Azure AD B2C OAuth2, no anti-bot | -- |
 | 6 | Zing Health | Easy-Mod | EvolveNXT platform, reCAPTCHA, email/password + security Q's | -- |
