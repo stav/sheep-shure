@@ -1,13 +1,30 @@
-import { useState } from "react";
-import { RefreshCw, ExternalLink, CheckCircle2, AlertTriangle, Users, ArrowRightLeft } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
+import {
+  ExternalLink,
+  CheckCircle2,
+  AlertTriangle,
+  Users,
+  ArrowRightLeft,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useCarrierSync, useOpenCarrierLogin, useSyncLogs } from "@/hooks/useCarrierSync";
+import {
+  useOpenCarrierLogin,
+  useTriggerCarrierFetch,
+  useProcessPortalMembers,
+  useSyncLogs,
+} from "@/hooks/useCarrierSync";
 import type { SyncResult } from "@/types";
 
 interface CarrierConfig {
@@ -19,60 +36,114 @@ interface CarrierConfig {
 
 const CARRIERS: CarrierConfig[] = [
   {
-    id: "devoted",
+    id: "carrier-devoted",
     name: "Devoted Health",
     description: "React SPA, GraphQL API",
     status: "available",
   },
   {
-    id: "alignment",
+    id: "carrier-alignment",
     name: "Alignment Healthcare",
     description: "Azure AD B2C OAuth2",
     status: "coming_soon",
   },
   {
-    id: "uhc",
+    id: "carrier-uhc",
     name: "UnitedHealthcare",
     description: "Jarvis portal, REST APIs",
     status: "coming_soon",
   },
 ];
 
+type SyncPhase = "idle" | "login" | "fetching" | "processing";
+
 export function CarrierSyncPage() {
   const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
-  const [authToken, setAuthToken] = useState("");
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
+  const [syncPhase, setSyncPhase] = useState<SyncPhase>("idle");
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const openLogin = useOpenCarrierLogin();
-  const sync = useCarrierSync();
+  const triggerFetch = useTriggerCarrierFetch();
+  const processMembers = useProcessPortalMembers();
   const { data: syncLogs } = useSyncLogs();
+
+  // Listen for data coming back from the carrier webview
+  const handleSyncData = useCallback(
+    (carrierId: string, membersJson: string) => {
+      setSyncPhase("processing");
+      setSyncError(null);
+      processMembers.mutate(
+        { carrierId, membersJson },
+        {
+          onSuccess: (result) => {
+            setLastResult(result);
+            setSyncPhase("idle");
+          },
+          onError: (err) => {
+            setSyncError(String(err));
+            setSyncPhase("idle");
+          },
+        }
+      );
+    },
+    [processMembers]
+  );
+
+  // Set up Tauri event listeners
+  useEffect(() => {
+    const unlistenData = listen<string>("carrier-sync-data", (event) => {
+      if (selectedCarrier) {
+        handleSyncData(selectedCarrier, event.payload);
+      }
+    });
+
+    const unlistenError = listen<string>("carrier-sync-error", (event) => {
+      setSyncError(event.payload);
+      setSyncPhase("idle");
+    });
+
+    return () => {
+      unlistenData.then((fn) => fn());
+      unlistenError.then((fn) => fn());
+    };
+  }, [selectedCarrier, handleSyncData]);
 
   const handleOpenPortal = (carrierId: string) => {
     setSelectedCarrier(carrierId);
-    openLogin.mutate(carrierId);
+    setSyncError(null);
+    setLastResult(null);
+    setSyncPhase("login");
+    openLogin.mutate(carrierId, {
+      onError: (err) => {
+        setSyncError(String(err));
+        setSyncPhase("idle");
+      },
+    });
   };
 
-  const handleSync = () => {
-    if (!selectedCarrier || !authToken.trim()) return;
-
-    sync.mutate(
-      { carrierId: selectedCarrier, authToken: authToken.trim() },
-      {
-        onSuccess: (result) => {
-          setLastResult(result);
-          setAuthToken("");
-        },
-      }
-    );
+  const handleTriggerSync = () => {
+    if (!selectedCarrier) return;
+    setSyncPhase("fetching");
+    setSyncError(null);
+    triggerFetch.mutate(selectedCarrier, {
+      onError: (err) => {
+        setSyncError(String(err));
+        setSyncPhase("idle");
+      },
+    });
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Carrier Portal Sync</h2>
+        <h2 className="text-2xl font-bold tracking-tight">
+          Carrier Portal Sync
+        </h2>
         <p className="text-muted-foreground">
-          Verify your book of business against carrier portals and auto-update enrollment statuses.
+          Verify your book of business against carrier portals and auto-update
+          enrollment statuses.
         </p>
       </div>
 
@@ -80,8 +151,18 @@ export function CarrierSyncPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {CARRIERS.map((carrier) => {
           const latestLog = syncLogs?.find((l) => l.carrier_id === carrier.id);
+          const isSelected = selectedCarrier === carrier.id;
           return (
-            <Card key={carrier.id} className={carrier.status === "coming_soon" ? "opacity-60" : ""}>
+            <Card
+              key={carrier.id}
+              className={
+                carrier.status === "coming_soon"
+                  ? "opacity-60"
+                  : isSelected
+                    ? "ring-2 ring-primary"
+                    : ""
+              }
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">{carrier.name}</CardTitle>
@@ -96,9 +177,11 @@ export function CarrierSyncPage() {
               <CardContent>
                 {latestLog && (
                   <div className="mb-3 text-xs text-muted-foreground">
-                    Last sync: {new Date(latestLog.synced_at).toLocaleString()}
+                    Last sync:{" "}
+                    {new Date(latestLog.synced_at).toLocaleString()}
                     <span className="ml-2">
-                      ({latestLog.matched} matched, {latestLog.disenrolled} disenrolled)
+                      ({latestLog.matched} matched, {latestLog.disenrolled}{" "}
+                      disenrolled)
                     </span>
                   </div>
                 )}
@@ -117,47 +200,52 @@ export function CarrierSyncPage() {
         })}
       </div>
 
-      {/* Auth token input + sync trigger */}
+      {/* Sync controls */}
       {selectedCarrier && (
         <>
           <Separator />
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Sync {CARRIERS.find((c) => c.id === selectedCarrier)?.name}
+                Sync{" "}
+                {CARRIERS.find((c) => c.id === selectedCarrier)?.name}
               </CardTitle>
               <CardDescription>
-                After logging in to the carrier portal, paste the auth token from your browser's
-                DevTools (Network tab → Authorization header or cookies).
+                {syncPhase === "login" &&
+                  "Log in to the carrier portal in the opened window, then click Sync Now."}
+                {syncPhase === "fetching" &&
+                  "Fetching member data from the carrier portal..."}
+                {syncPhase === "processing" &&
+                  "Comparing portal data against local enrollments..."}
+                {syncPhase === "idle" &&
+                  !lastResult &&
+                  "Open the portal, log in, then click Sync Now to fetch and compare member data."}
+                {syncPhase === "idle" &&
+                  lastResult &&
+                  "Sync complete. You can run another sync or open a different carrier."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="auth-token">Auth Token</Label>
-                <Input
-                  id="auth-token"
-                  type="password"
-                  placeholder="Paste Bearer token or session cookie..."
-                  value={authToken}
-                  onChange={(e) => setAuthToken(e.target.value)}
-                />
-              </div>
               <Button
-                onClick={handleSync}
-                disabled={!authToken.trim() || sync.isPending}
+                onClick={handleTriggerSync}
+                disabled={syncPhase === "fetching" || syncPhase === "processing"}
               >
-                {sync.isPending ? (
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                {syncPhase === "fetching" || syncPhase === "processing" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <ArrowRightLeft className="mr-2 h-4 w-4" />
                 )}
-                {sync.isPending ? "Syncing..." : "Run Sync"}
+                {syncPhase === "fetching"
+                  ? "Fetching from portal..."
+                  : syncPhase === "processing"
+                    ? "Processing..."
+                    : "Sync Now"}
               </Button>
 
-              {sync.isError && (
+              {syncError && (
                 <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{String(sync.error)}</span>
+                  <span>{syncError}</span>
                 </div>
               )}
             </CardContent>
@@ -190,7 +278,9 @@ export function CarrierSyncPage() {
                       className="flex items-center justify-between rounded-md border p-3 text-sm"
                     >
                       <div>
-                        <span className="font-medium">{log.carrier_name ?? log.carrier_id}</span>
+                        <span className="font-medium">
+                          {log.carrier_name ?? log.carrier_id}
+                        </span>
                         <span className="ml-2 text-muted-foreground">
                           {new Date(log.synced_at).toLocaleString()}
                         </span>
@@ -225,7 +315,7 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-base">
           <CheckCircle2 className="h-5 w-5 text-green-500" />
           Sync Complete — {result.carrier_name}
         </CardTitle>
@@ -242,11 +332,15 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
             <div className="text-xs text-muted-foreground">Local</div>
           </div>
           <div className="rounded-md border p-3 text-center">
-            <div className="text-2xl font-bold text-green-600">{result.matched}</div>
+            <div className="text-2xl font-bold text-green-600">
+              {result.matched}
+            </div>
             <div className="text-xs text-muted-foreground">Matched</div>
           </div>
           <div className="rounded-md border p-3 text-center">
-            <div className="text-2xl font-bold text-red-600">{result.disenrolled.length}</div>
+            <div className="text-2xl font-bold text-red-600">
+              {result.disenrolled.length}
+            </div>
             <div className="text-xs text-muted-foreground">Disenrolled</div>
           </div>
         </div>
@@ -254,7 +348,7 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
         {/* Disenrolled list */}
         {result.disenrolled.length > 0 && (
           <div>
-            <h4 className="mb-2 text-sm font-medium flex items-center gap-2">
+            <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">
               <AlertTriangle className="h-4 w-4 text-red-500" />
               Auto-Disenrolled ({result.disenrolled.length})
             </h4>
@@ -266,8 +360,12 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
                     className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950"
                   >
                     <span className="font-medium">{d.client_name}</span>
-                    <span className="text-muted-foreground">{d.plan_name ?? "—"}</span>
-                    <Badge variant="destructive" className="text-xs">Disenrolled</Badge>
+                    <span className="text-muted-foreground">
+                      {d.plan_name ?? "—"}
+                    </span>
+                    <Badge variant="destructive" className="text-xs">
+                      Disenrolled
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -278,7 +376,7 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
         {/* New in portal list */}
         {result.new_in_portal.length > 0 && (
           <div>
-            <h4 className="mb-2 text-sm font-medium flex items-center gap-2">
+            <h4 className="mb-2 flex items-center gap-2 text-sm font-medium">
               <Users className="h-4 w-4 text-blue-500" />
               New in Portal ({result.new_in_portal.length})
             </h4>
@@ -292,8 +390,15 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
                     <span className="font-medium">
                       {m.first_name} {m.last_name}
                     </span>
-                    <span className="text-muted-foreground">{m.plan_name ?? "—"}</span>
-                    <Badge variant="secondary" className="text-xs">New</Badge>
+                    <span className="text-muted-foreground">
+                      {[m.city, m.state].filter(Boolean).join(", ") || "—"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {m.plan_name ?? "—"}
+                    </span>
+                    <Badge variant="secondary" className="text-xs">
+                      {m.status ?? "New"}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -301,11 +406,12 @@ function SyncResultsPanel({ result }: { result: SyncResult }) {
           </div>
         )}
 
-        {result.disenrolled.length === 0 && result.new_in_portal.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            All local enrollments matched the portal. No changes needed.
-          </p>
-        )}
+        {result.disenrolled.length === 0 &&
+          result.new_in_portal.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              All local enrollments matched the portal. No changes needed.
+            </p>
+          )}
       </CardContent>
     </Card>
   );

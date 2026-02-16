@@ -256,10 +256,16 @@ export interface PortalMember {
   first_name: string;
   last_name: string;
   member_id?: string;
+  dob?: string;
   plan_name?: string;
   effective_date?: string;
   end_date?: string;
   status?: string;
+  policy_status?: string;
+  state?: string;
+  city?: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface SyncResult {

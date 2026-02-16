@@ -6,10 +6,16 @@ pub struct PortalMember {
     pub first_name: String,
     pub last_name: String,
     pub member_id: Option<String>,
+    pub dob: Option<String>,
     pub plan_name: Option<String>,
     pub effective_date: Option<String>,
     pub end_date: Option<String>,
     pub status: Option<String>,
+    pub policy_status: Option<String>,
+    pub state: Option<String>,
+    pub city: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
 }
 
 /// The result of comparing portal data against local enrollments.

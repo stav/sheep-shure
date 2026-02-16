@@ -10,6 +10,7 @@ struct LocalEnrollment {
     client_id: String,
     client_first_name: String,
     client_last_name: String,
+    #[allow(dead_code)]
     client_mbi: Option<String>,
     client_dob: Option<String>,
     plan_name: Option<String>,
@@ -98,22 +99,25 @@ fn get_local_enrollments(conn: &Connection, carrier_id: &str) -> Result<Vec<Loca
 }
 
 /// Try to match a portal member to a local enrollment.
-/// Strategy: MBI first (most reliable), then last_name + first_name.
+/// Strategy: name + DOB first (most reliable combo), then name-only fallback.
+/// Devoted's member_id is an internal UUID, not an MBI, so we skip MBI matching for now.
 fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Option<&'a LocalEnrollment> {
-    // Try MBI match first (if portal provides a member_id that could be an MBI)
-    if let Some(ref portal_member_id) = portal.member_id {
-        let mbi_match = locals.iter().find(|le| {
-            le.client_mbi
-                .as_ref()
-                .map(|mbi| mbi.eq_ignore_ascii_case(portal_member_id))
-                .unwrap_or(false)
+    // Try name + DOB match (strongest without MBI)
+    if let Some(ref portal_dob) = portal.dob {
+        let dob_match = locals.iter().find(|le| {
+            le.client_last_name.eq_ignore_ascii_case(&portal.last_name)
+                && le.client_first_name.eq_ignore_ascii_case(&portal.first_name)
+                && le.client_dob
+                    .as_ref()
+                    .map(|dob| dob == portal_dob)
+                    .unwrap_or(false)
         });
-        if mbi_match.is_some() {
-            return mbi_match;
+        if dob_match.is_some() {
+            return dob_match;
         }
     }
 
-    // Fall back to name matching (case-insensitive)
+    // Fall back to name-only matching (case-insensitive)
     locals.iter().find(|le| {
         le.client_last_name.eq_ignore_ascii_case(&portal.last_name)
             && le.client_first_name.eq_ignore_ascii_case(&portal.first_name)

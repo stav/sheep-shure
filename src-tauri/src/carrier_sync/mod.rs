@@ -17,14 +17,28 @@ pub trait CarrierPortal: Send + Sync {
     /// The URL the user navigates to in the webview to log in.
     fn login_url(&self) -> &str;
 
-    /// Fetch enrolled members from the carrier portal using the provided auth token.
-    async fn fetch_members(&self, auth_token: &str) -> Result<Vec<PortalMember>, AppError>;
+    /// Optional JS that runs at document-start in the carrier webview.
+    /// Default is empty (no init script needed).
+    fn init_script(&self) -> &str {
+        ""
+    }
+
+    /// JS code to inject into the webview after the user has logged in.
+    /// The script should fetch member data from the portal API and then navigate to:
+    ///   `http://sheeps-sync.localhost/data?members=<encodeURIComponent(JSON)>`
+    /// on success, or:
+    ///   `http://sheeps-sync.localhost/error?message=<encodeURIComponent(msg)>`
+    /// on failure.
+    fn fetch_script(&self) -> &str;
+
+    /// Fetch members via HTTP using cookies (fallback approach).
+    async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError>;
 }
 
 /// Look up the carrier portal implementation by carrier_id.
 pub fn get_portal(carrier_id: &str) -> Option<Box<dyn CarrierPortal>> {
     match carrier_id {
-        "devoted" => Some(Box::new(devoted::DevotedPortal)),
+        "carrier-devoted" => Some(Box::new(devoted::DevotedPortal)),
         _ => None,
     }
 }
