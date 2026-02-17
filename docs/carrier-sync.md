@@ -45,9 +45,11 @@ Webview (carrier portal)
 | File | Purpose |
 |------|---------|
 | `src-tauri/src/carrier_sync/mod.rs` | `CarrierPortal` trait + carrier registry |
-| `src-tauri/src/carrier_sync/devoted.rs` | Devoted Health implementation |
-| `src-tauri/src/carrier_sync/caresource.rs` | CareSource implementation |
-| `src-tauri/src/carrier_sync/medmutual.rs` | Medical Mutual of Ohio implementation |
+| `src-tauri/src/carrier_sync/devoted.rs` | Devoted Health — [docs](carriers/devoted-health.md) |
+| `src-tauri/src/carrier_sync/caresource.rs` | CareSource — [docs](carriers/caresource.md) |
+| `src-tauri/src/carrier_sync/medmutual.rs` | Medical Mutual — [docs](carriers/medical-mutual.md) |
+| `src-tauri/src/carrier_sync/uhc.rs` | UnitedHealthcare — [docs](carriers/unitedhealthcare.md) |
+| `src-tauri/src/carrier_sync/humana.rs` | Humana — [docs](carriers/humana.md) |
 | `src-tauri/src/commands/carrier_sync_commands.rs` | Tauri IPC commands |
 | `src-tauri/src/services/carrier_sync_service.rs` | Comparison logic, auto-disenrollment |
 | `src-tauri/src/models/carrier_sync.rs` | `PortalMember`, `SyncResult`, `SyncLogEntry` |
@@ -81,65 +83,25 @@ Portal members are matched to local enrollments by:
 
 MBI matching is not used because carrier portal member IDs are internal UUIDs, not MBIs.
 
-## Devoted Health Implementation
+## Carrier Implementations
 
-- **Portal**: `https://agent.devoted.com/`
-- **Framework**: React SPA ("Orinoco") with GraphQL API
-- **Auth**: Auth0 SSO, session stored in HttpOnly `devoted_session` JWT cookie
-- **CSRF**: Fetched via `CSRFToken` GraphQL persisted query, then sent as `x-csrf-token` header
-- **Required headers**: `x-orinoco-portal: Agents`, `x-orinoco-client-version: <from window.__orinoco_config>`
-- **Member query**: `ListBookOfBusinessContacts` persisted query, page-based pagination (100/page)
-- **Persisted query hashes**:
-  - `CSRFToken`: `0ba70438537351c55da05b9cec107834cf0e6e1126b9107bb382cba283d9dc5a`
-  - `ListBookOfBusinessContacts`: `881c07f52080a6a6a04c653b03fa4520acfd30de90ab0ac6ca4caa161f6bbc95`
+Each carrier has a detailed doc in `docs/carriers/`:
 
-### Member fields extracted
+| Carrier | Approach | Key Technique | Docs |
+|---------|----------|---------------|------|
+| Devoted Health | GraphQL API | Persisted queries, CSRF token fetch | [devoted-health.md](carriers/devoted-health.md) |
+| CareSource | REST API | Init script token capture, 31-day date windowing | [caresource.md](carriers/caresource.md) |
+| Medical Mutual | HTML scraping | Server-rendered `#member-table`, `DOMParser` | [medical-mutual.md](carriers/medical-mutual.md) |
+| UnitedHealthcare | REST API | Multi-stage partyID fallback, deep storage search | [unitedhealthcare.md](carriers/unitedhealthcare.md) |
+| Humana | DOM table scraping | Split-table grid, live DOM, pagination | [humana.md](carriers/humana.md) |
 
-`first_name`, `last_name`, `member_id`, `birth_date`, `status`, `aor_policy_status`, `current_pbp` (plan name, start/end dates), `state`, `city`, `primary_phone`, `email`
+### Approach Summary
 
-## CareSource Implementation
+Three distinct patterns emerged across the 5 implementations:
 
-- **Portal**: `https://caresource2.destinationrx.com/PC/Agent/Account/Login`
-- **Platform**: DestinationRx (DRX) SPA
-- **API**: REST on `https://www.drxwebservices.com/spa{year}/v1/` (cross-origin)
-- **Auth**: Bearer JWT token (not cookie-based), cross-origin to `drxwebservices.com`
-- **CSRF**: None required
-- **init_script**: Monkey-patches `fetch` and `XMLHttpRequest` to capture the Bearer JWT and agent GUID from the SPA's own API calls to `drxwebservices.com`
-- **Member endpoint**: `POST /Agent/{agentGUID}/MemberProfileSearch`
-- **Date range limit**: 31-day window per request -- fetch_script iterates from Oct 1 of previous year through today in 31-day chunks, deduplicating by `memberID`
-
-### Request body
-
-```json
-{
-    "applicationStartDate": "2026-01-01T00:00:00.000Z",
-    "applicationEndDate": "2026-01-31T23:59:59.000Z",
-    "enrollmentType": "medicare",
-    "agentReport": true
-}
-```
-
-### Member fields extracted
-
-`firstName`, `lastName`, `memberID`, `enrollments[].plan`, `enrollments[].enrollmentDate`, `carrierStatus`, `state`, `city`, `homePhone`, `primaryEmailAddress`
-
-Note: DOB is not available from this endpoint.
-
-## Medical Mutual of Ohio Implementation
-
-- **Portal**: `https://mybrokerlink.com/`
-- **Platform**: Sitecore CMS, server-rendered HTML
-- **Auth**: Session cookies (same-origin, no interception needed)
-- **CSRF**: None required
-- **Approach**: Pure DOM scraping -- no API calls, no init_script
-- **fetch_script**: Fetches `/mybusiness/bookofbusiness` via AJAX, parses the `#member-table` HTML table using `DOMParser`, extracts data from `td[data-col-name="..."]` selectors
-- **Table ID**: `#member-table` with `data-col-name` attributes on each `<td>`
-
-### Member fields extracted
-
-`Name`, `GroupNumber`, `DateOfBirth`, `MarketSegment`, `EffectiveDate`, `Attention` (status), `State`, `City`, `Phone`, `Email`
-
-Dates are converted from `MM/DD/YYYY` to `YYYY-MM-DD` (ISO) for matching.
+1. **API calls** (Devoted, CareSource, UHC): Call the same REST/GraphQL APIs the portal SPA uses, leveraging the webview's authenticated session. Best for SPAs with clean APIs.
+2. **Server-rendered HTML** (Medical Mutual): Fetch the HTML page via AJAX and parse with `DOMParser`. Best for traditional server-rendered sites.
+3. **Live DOM scraping** (Humana): Read data directly from the rendered page's DOM. Needed when the data is loaded before any script injection and no API can be identified.
 
 ## Adding a New Carrier
 
@@ -174,20 +136,20 @@ Dates are converted from `MM/DD/YYYY` to `YYYY-MM-DD` (ISO) for matching.
 
 ## Carrier Difficulty Rankings
 
-Ranked by automation difficulty based on auth complexity and anti-bot measures:
+Ranked by automation difficulty based on auth complexity, anti-bot measures, and portal architecture. Actual difficulty notes reflect real implementation experience where available.
 
 | Rank | Carrier | Difficulty | Notes | Status |
 |------|---------|-----------|-------|--------|
-| 1 | Devoted Health | Easiest | React SPA ("Orinoco"), GraphQL API, no anti-bot | **Done** |
-| 2 | CareSource | Easy | DestinationRx SPA, cross-origin REST API, Bearer JWT | **Done** |
-| 3 | Medical Mutual of Ohio | Easy | MyBrokerLink, Sitecore, server-rendered HTML table | **Done** |
-| 4 | SummaCare | Easy | CMS/Sitecore, NPN login, no bot detection at all | -- |
-| 5 | Alignment Healthcare | Easy | React SPA, Azure AD B2C OAuth2, no anti-bot | -- |
-| 6 | Zing Health | Easy-Mod | EvolveNXT platform, reCAPTCHA, email/password + security Q's | -- |
-| 7 | UnitedHealthcare (Jarvis) | Easy-Mod | Angular SPA, REST APIs, OAuth PKCE, Excel export | -- |
-| 8 | Cigna | Easy-Mod | Low anti-bot, agent-number login, multi-format downloads | -- |
-| 9 | Molina (EvolveNXT) | Moderate | jQuery server-rendered, reCAPTCHA v3, Excel export | -- |
-| 10 | Humana (Vantage) | Moderate | 2FA w/ device-save, proven scrapable | -- |
+| 1 | Devoted Health | Easiest | React SPA, GraphQL persisted queries, no anti-bot. Clean API, straightforward CSRF token flow. | **Done** |
+| 2 | Medical Mutual of Ohio | Easy | Server-rendered HTML with semantic `data-col-name` attrs. No API, no JS framework, no auth complexity. Simplest implementation. | **Done** |
+| 3 | CareSource | Easy | DRX SPA, cross-origin REST API. Needed init script for Bearer JWT capture. 31-day date window limit required windowed iteration. | **Done** |
+| 4 | UnitedHealthcare | Easy-Mod | Angular SPA (Jarvis), REST API. Required multi-stage fallback for partyID capture (init script race condition with WebKit2GTK). Direct API fallback solved it. | **Done** |
+| 5 | Humana | Moderate | Angular SPA (Vantage), split-table grid (separate header/body tables). No API discoverable — had to scrape live DOM. Required 5 iterations to handle grid quirks. | **Done** |
+| 6 | SummaCare | Easy | CMS/Sitecore, NPN login, no bot detection at all | -- |
+| 7 | Alignment Healthcare | Easy | React SPA, Azure AD B2C OAuth2, no anti-bot | -- |
+| 8 | Zing Health | Easy-Mod | EvolveNXT platform, reCAPTCHA, email/password + security Q's | -- |
+| 9 | Cigna | Easy-Mod | Low anti-bot, agent-number login, multi-format downloads | -- |
+| 10 | Molina (EvolveNXT) | Moderate | jQuery server-rendered, reCAPTCHA v3, Excel export | -- |
 | 11 | Anthem BCBS (Producer Toolbox) | Moderate | SPA + Akamai, partner API exists | -- |
 | 12 | Mutual of Omaha | Mod-Hard | WebSphere, Symantec VIP MFA | -- |
 | 13 | WellCare/Centene | Mod-Hard | PingOne SSO | -- |
@@ -197,15 +159,15 @@ Ranked by automation difficulty based on auth complexity and anti-bot measures:
 
 ### Portal URLs
 
-| Carrier | Portal URL |
-|---------|-----------|
-| Devoted Health | <https://agent.devoted.com/> |
-| CareSource | <https://caresource2.destinationrx.com/PC/Agent/Account/Login> |
-| Medical Mutual of Ohio | <https://mybrokerlink.com/> |
-| SummaCare | <https://www.summacare.com/brokerstorehome> |
-| Alignment Healthcare | TBD |
-| Zing Health | <https://zing.sb.evolvenxt.com/> |
-| UnitedHealthcare | TBD (Jarvis portal) |
-| Humana | TBD (Vantage portal) |
-| Anthem BCBS | TBD (Producer Toolbox) |
-| Aetna | <https://www.aetna.com/producer_public/login.fcc> |
+| Carrier | Portal URL | Status |
+|---------|-----------|--------|
+| Devoted Health | <https://agent.devoted.com/> | Done |
+| CareSource | <https://caresource2.destinationrx.com/PC/Agent/Account/Login> | Done |
+| Medical Mutual of Ohio | <https://mybrokerlink.com/> | Done |
+| UnitedHealthcare | <https://www.uhcjarvis.com/content/jarvis/en/secure/book-of-business-search.html> | Done |
+| Humana | <https://agentportal.humana.com/Vantage/apps/index.html?agenthome=-1#!/> | Done |
+| SummaCare | <https://www.summacare.com/brokerstorehome> | -- |
+| Alignment Healthcare | TBD | -- |
+| Zing Health | <https://zing.sb.evolvenxt.com/> | -- |
+| Anthem BCBS | TBD (Producer Toolbox) | -- |
+| Aetna | <https://www.aetna.com/producer_public/login.fcc> | -- |
