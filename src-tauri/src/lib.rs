@@ -65,6 +65,7 @@ pub fn run() {
             commands::parse_import_file,
             commands::validate_import,
             commands::execute_import,
+            commands::import_call_log,
             commands::get_dashboard_stats,
             commands::get_report,
             commands::export_report_pdf,

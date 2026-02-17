@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::db::DbState;
 use crate::services::import_service;
+use crate::services::import_service::ActivityImportResult;
 
 #[tauri::command]
 pub fn parse_import_file(file_path: String) -> Result<serde_json::Value, String> {
@@ -105,5 +106,15 @@ pub fn execute_import(
             }))
             .map_err(|e| crate::error::AppError::Import(e.to_string()))
         })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_call_log(
+    source_path: String,
+    state: State<'_, DbState>,
+) -> Result<ActivityImportResult, String> {
+    state
+        .with_conn(|conn| import_service::import_call_log_from_db(conn, &source_path))
         .map_err(|e| e.to_string())
 }
