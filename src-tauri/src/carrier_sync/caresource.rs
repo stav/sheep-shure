@@ -7,7 +7,7 @@ use super::CarrierPortal;
 
 pub struct CareSourcePortal;
 
-const LOGIN_URL: &str = "https://caresource2.destinationrx.com/PC/Agent/Account/Login";
+const LOGIN_URL: &str = "https://caresource2.destinationrx.com/PC/Agent/Profile/Search";
 
 /// Intercept the DRX SPA's own fetch/XHR calls to capture the Bearer JWT
 /// and agent GUID from requests to drxwebservices.com.

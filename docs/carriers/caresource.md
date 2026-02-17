@@ -3,7 +3,7 @@
 **Status**: Done
 **Difficulty**: Easy
 **Carrier ID**: `carrier-caresource`
-**Portal URL**: https://caresource2.destinationrx.com/PC/Agent/Account/Login
+**Portal URL**: https://caresource2.destinationrx.com/PC/Agent/Profile/Search
 **Source**: `src-tauri/src/carrier_sync/caresource.rs`
 
 ## Portal Overview

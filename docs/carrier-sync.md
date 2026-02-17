@@ -162,7 +162,7 @@ Ranked by automation difficulty based on auth complexity, anti-bot measures, and
 | Carrier | Portal URL | Status |
 |---------|-----------|--------|
 | Devoted Health | <https://agent.devoted.com/> | Done |
-| CareSource | <https://caresource2.destinationrx.com/PC/Agent/Account/Login> | Done |
+| CareSource | <https://caresource2.destinationrx.com/PC/Agent/Profile/Search> | Done |
 | Medical Mutual of Ohio | <https://mybrokerlink.com/> | Done |
 | UnitedHealthcare | <https://www.uhcjarvis.com/content/jarvis/en/secure/book-of-business-search.html> | Done |
 | Humana | <https://agentportal.humana.com/Vantage/apps/index.html?agenthome=-1#!/> | Done |
