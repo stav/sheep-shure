@@ -73,6 +73,12 @@ pub fn run() {
             commands::get_agent_profile,
             commands::save_agent_profile,
             commands::backup_database,
+            commands::get_database_info,
+            commands::open_carrier_login,
+            commands::trigger_carrier_fetch,
+            commands::process_portal_members,
+            commands::get_carrier_login_url,
+            commands::get_sync_logs,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running SHEEPS application");

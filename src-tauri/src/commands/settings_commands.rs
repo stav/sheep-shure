@@ -1,7 +1,66 @@
+use serde::Serialize;
 use tauri::State;
 
 use crate::db::DbState;
 use crate::AppDataDir;
+
+#[derive(Serialize)]
+pub struct DatabaseInfo {
+    pub db_path: String,
+    pub db_size_bytes: u64,
+    pub client_count: i64,
+    pub enrollment_count: i64,
+    pub last_backup: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_database_info(
+    db_state: State<'_, DbState>,
+    app_data_dir: State<'_, AppDataDir>,
+) -> Result<DatabaseInfo, String> {
+    let db_path = app_data_dir.0.join("sheeps.db");
+    let db_path_str = db_path.to_string_lossy().to_string();
+
+    let db_size_bytes = std::fs::metadata(&db_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    db_state
+        .with_conn(|conn| {
+            let client_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM clients WHERE is_active = 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+
+            let enrollment_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM enrollments WHERE is_active = 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+
+            let last_backup: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = 'last_backup_at'",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            Ok(DatabaseInfo {
+                db_path: db_path_str,
+                db_size_bytes,
+                client_count,
+                enrollment_count,
+                last_backup,
+            })
+        })
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, DbState>) -> Result<serde_json::Value, String> {
@@ -154,8 +213,22 @@ pub fn save_agent_profile(
 pub fn backup_database(
     destination: String,
     app_data_dir: State<'_, AppDataDir>,
+    db_state: State<'_, DbState>,
 ) -> Result<(), String> {
     let db_path = app_data_dir.0.join("sheeps.db");
     std::fs::copy(&db_path, &destination).map_err(|e| format!("Backup failed: {}", e))?;
+
+    // Record the backup timestamp
+    db_state
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('last_backup_at', datetime('now')) ON CONFLICT(key) DO UPDATE SET value = datetime('now'), updated_at = datetime('now')",
+                [],
+            )
+            .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
