@@ -15,6 +15,9 @@ const GRAPHQL_ENDPOINT: &str = "https://agent.devoted.com/graphql/agents/";
 const PERSISTED_QUERY_HASH: &str =
     "881c07f52080a6a6a04c653b03fa4520acfd30de90ab0ac6ca4caa161f6bbc95";
 
+const DETAIL_QUERY_HASH: &str =
+    "bbc3ff06615745839c96d4823ef9b60f6171948d0bb8a5f31176ee618aca0c56";
+
 const PAGE_LIMIT: i64 = 100;
 
 /// JS injected at document-start (before any page scripts) to intercept
@@ -109,6 +112,7 @@ const FETCH_SCRIPT: &str = r#"
             const result = json.data.ListBookOfBusinessContacts;
             for (const c of result.items) {
                 allMembers.push({
+                    _id: c.id || null,
                     first_name: c.first_name || '',
                     last_name: c.last_name || '',
                     member_id: c.member_id || null,
@@ -121,13 +125,77 @@ const FETCH_SCRIPT: &str = r#"
                     state: c.state || null,
                     city: c.city || null,
                     phone: c.primary_phone || null,
-                    email: c.email || null
+                    email: c.email || null,
+                    gender: null,
+                    middle_name: null,
+                    address_line1: null,
+                    address_line2: null,
+                    zip: null,
+                    county: null,
+                    mbi: null,
+                    application_date: null,
+                    member_record_locator: null,
+                    medicaid_id: null,
+                    provider_first_name: null,
+                    provider_last_name: null
                 });
             }
 
             hasNext = result.page_info.has_next_page;
             page++;
         }
+
+        // Fetch detail for each member (parallel, batched by 5)
+        const BATCH = 5;
+        for (let i = 0; i < allMembers.length; i += BATCH) {
+            const batch = allMembers.slice(i, i + BATCH);
+            const details = await Promise.all(batch.map(m => {
+                if (!m._id) return Promise.resolve(null);
+                return fetch('/graphql/agents/', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json; charset=utf-8',
+                        'Content-Type': 'application/json; charset=utf-8',
+                        'x-orinoco-portal': 'Agents',
+                        'x-orinoco-client-version': clientVersion,
+                        'x-csrf-token': csrfToken
+                    },
+                    body: JSON.stringify({
+                        operationName: 'GetBookOfBusinessContact',
+                        variables: { id: m._id },
+                        extensions: {
+                            persistedQuery: {
+                                version: 1,
+                                sha256Hash: 'bbc3ff06615745839c96d4823ef9b60f6171948d0bb8a5f31176ee618aca0c56'
+                            }
+                        }
+                    })
+                }).then(r => r.json()).catch(() => null);
+            }));
+            details.forEach((d, j) => {
+                if (!d) return;
+                const c = d.data && d.data.GetBookOfBusinessContact;
+                if (!c) return;
+                const idx = i + j;
+                allMembers[idx].gender = c.gender || null;
+                allMembers[idx].middle_name = c.middle_name || null;
+                allMembers[idx].address_line1 = c.address || null;
+                allMembers[idx].address_line2 = c.address2 || null;
+                allMembers[idx].zip = c.zip_code || null;
+                allMembers[idx].county = c.county || null;
+                allMembers[idx].mbi = c.medicare_beneficiary_id || null;
+                allMembers[idx].application_date = c.application_created_at || null;
+                allMembers[idx].member_record_locator = c.member_record_locator || null;
+                allMembers[idx].medicaid_id = c.medicaid_id || null;
+                if (c.provider) {
+                    allMembers[idx].provider_first_name = c.provider.first_name || null;
+                    allMembers[idx].provider_last_name = c.provider.last_name || null;
+                }
+            });
+        }
+
+        // Strip internal _id before sending
+        allMembers.forEach(m => delete m._id);
 
         window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(allMembers));
@@ -160,6 +228,7 @@ struct BobResponse {
 
 #[derive(Debug, Deserialize)]
 struct BobContact {
+    id: Option<String>,
     first_name: Option<String>,
     last_name: Option<String>,
     member_id: Option<String>,
@@ -190,6 +259,40 @@ struct BobPageInfo {
 #[derive(Debug, Deserialize)]
 struct GraphQLError {
     message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DetailGraphQLResponse {
+    data: Option<DetailGraphQLData>,
+    #[allow(dead_code)]
+    errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(non_snake_case)]
+struct DetailGraphQLData {
+    GetBookOfBusinessContact: Option<BobContactDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BobContactDetail {
+    gender: Option<String>,
+    middle_name: Option<String>,
+    address: Option<String>,
+    address2: Option<String>,
+    zip_code: Option<String>,
+    county: Option<String>,
+    medicare_beneficiary_id: Option<String>,
+    application_created_at: Option<String>,
+    member_record_locator: Option<String>,
+    medicaid_id: Option<String>,
+    provider: Option<BobProvider>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BobProvider {
+    first_name: Option<String>,
+    last_name: Option<String>,
 }
 
 // ── Trait implementation ────────────────────────────────────────────────────
@@ -231,7 +334,7 @@ impl CarrierPortal for DevotedPortal {
             ))?;
 
         let client = reqwest::Client::new();
-        let mut all_members = Vec::new();
+        let mut all_members: Vec<(Option<String>, PortalMember)> = Vec::new();
         let mut page: i64 = 1;
 
         loop {
@@ -299,21 +402,36 @@ impl CarrierPortal for DevotedPortal {
                     None => (None, None, None),
                 };
 
-                all_members.push(PortalMember {
-                    first_name: contact.first_name.clone().unwrap_or_default(),
-                    last_name: contact.last_name.clone().unwrap_or_default(),
-                    member_id: contact.member_id.clone(),
-                    dob: contact.birth_date.clone(),
-                    plan_name,
-                    effective_date,
-                    end_date,
-                    status: contact.status.clone(),
-                    policy_status: contact.aor_policy_status.clone(),
-                    state: contact.state.clone(),
-                    city: contact.city.clone(),
-                    phone: contact.primary_phone.clone(),
-                    email: contact.email.clone(),
-                });
+                all_members.push((
+                    contact.id.clone(),
+                    PortalMember {
+                        first_name: contact.first_name.clone().unwrap_or_default(),
+                        last_name: contact.last_name.clone().unwrap_or_default(),
+                        member_id: contact.member_id.clone(),
+                        dob: contact.birth_date.clone(),
+                        plan_name,
+                        effective_date,
+                        end_date,
+                        status: contact.status.clone(),
+                        policy_status: contact.aor_policy_status.clone(),
+                        state: contact.state.clone(),
+                        city: contact.city.clone(),
+                        phone: contact.primary_phone.clone(),
+                        email: contact.email.clone(),
+                        gender: None,
+                        middle_name: None,
+                        address_line1: None,
+                        address_line2: None,
+                        zip: None,
+                        county: None,
+                        mbi: None,
+                        application_date: None,
+                        member_record_locator: None,
+                        medicaid_id: None,
+                        provider_first_name: None,
+                        provider_last_name: None,
+                    },
+                ));
             }
 
             if data.ListBookOfBusinessContacts.page_info.has_next_page {
@@ -323,6 +441,67 @@ impl CarrierPortal for DevotedPortal {
             }
         }
 
-        Ok(all_members)
+        // Fetch detail for each member to get address, gender, MBI, etc.
+        for (contact_id, member) in &mut all_members {
+            let cid = match contact_id {
+                Some(id) => id.clone(),
+                None => continue,
+            };
+
+            let body = serde_json::json!({
+                "operationName": "GetBookOfBusinessContact",
+                "variables": { "id": cid },
+                "extensions": {
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": DETAIL_QUERY_HASH
+                    }
+                }
+            });
+
+            let resp = client
+                .post(GRAPHQL_ENDPOINT)
+                .header(CONTENT_TYPE, "application/json")
+                .header(COOKIE, cookies)
+                .header("x-csrf-token", &csrf_token)
+                .json(&body)
+                .send()
+                .await;
+
+            let resp = match resp {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            if !resp.status().is_success() {
+                continue;
+            }
+
+            let detail_resp: DetailGraphQLResponse = match resp.json().await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            if let Some(data) = detail_resp.data {
+                if let Some(detail) = data.GetBookOfBusinessContact {
+                    member.gender = detail.gender;
+                    member.middle_name = detail.middle_name;
+                    member.address_line1 = detail.address;
+                    member.address_line2 = detail.address2;
+                    member.zip = detail.zip_code;
+                    member.county = detail.county;
+                    member.mbi = detail.medicare_beneficiary_id;
+                    member.application_date = detail.application_created_at;
+                    member.member_record_locator = detail.member_record_locator;
+                    member.medicaid_id = detail.medicaid_id;
+                    if let Some(provider) = detail.provider {
+                        member.provider_first_name = provider.first_name;
+                        member.provider_last_name = provider.last_name;
+                    }
+                }
+            }
+        }
+
+        Ok(all_members.into_iter().map(|(_, m)| m).collect())
     }
 }

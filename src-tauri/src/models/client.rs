@@ -28,6 +28,7 @@ pub struct Client {
     pub medicaid_id: Option<String>,
     pub lead_source: Option<String>,
     pub original_effective_date: Option<String>,
+    pub member_record_locator: Option<String>,
     pub is_active: Option<i32>,
     pub tags: Option<String>,
     pub notes: Option<String>,
@@ -62,6 +63,7 @@ pub struct CreateClientInput {
     pub medicaid_id: Option<String>,
     pub lead_source: Option<String>,
     pub original_effective_date: Option<String>,
+    pub member_record_locator: Option<String>,
     pub tags: Option<String>,
     pub notes: Option<String>,
 }
@@ -93,6 +95,7 @@ pub struct UpdateClientInput {
     pub medicaid_id: Option<String>,
     pub lead_source: Option<String>,
     pub original_effective_date: Option<String>,
+    pub member_record_locator: Option<String>,
     pub is_active: Option<i32>,
     pub tags: Option<String>,
     pub notes: Option<String>,

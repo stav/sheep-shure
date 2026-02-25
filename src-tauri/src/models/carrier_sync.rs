@@ -16,6 +16,18 @@ pub struct PortalMember {
     pub city: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
+    pub gender: Option<String>,
+    pub middle_name: Option<String>,
+    pub address_line1: Option<String>,
+    pub address_line2: Option<String>,
+    pub zip: Option<String>,
+    pub county: Option<String>,
+    pub mbi: Option<String>,
+    pub application_date: Option<String>,
+    pub member_record_locator: Option<String>,
+    pub medicaid_id: Option<String>,
+    pub provider_first_name: Option<String>,
+    pub provider_last_name: Option<String>,
 }
 
 /// The result of comparing portal data against local enrollments.

@@ -25,6 +25,7 @@ export interface Client {
   medicaid_id?: string;
   lead_source?: string;
   original_effective_date?: string;
+  member_record_locator?: string;
   is_active: boolean;
   tags?: string[];
   created_at: string;
@@ -261,6 +262,33 @@ export interface PortalMember {
   city?: string;
   phone?: string;
   email?: string;
+  gender?: string;
+  middle_name?: string;
+  address_line1?: string;
+  address_line2?: string;
+  zip?: string;
+  county?: string;
+  mbi?: string;
+  application_date?: string;
+  member_record_locator?: string;
+  medicaid_id?: string;
+  provider_first_name?: string;
+  provider_last_name?: string;
+}
+
+export interface ClientProvider {
+  id: string;
+  client_id: string;
+  first_name?: string;
+  last_name?: string;
+  npi?: string;
+  specialty?: string;
+  phone?: string;
+  is_pcp?: number;
+  source?: string;
+  is_active?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SyncResult {

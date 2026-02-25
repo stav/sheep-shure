@@ -6,7 +6,8 @@ use crate::models::{
     CreateClientInput, CreateEnrollmentInput, ImportPortalResult, PortalMember, SyncDisenrollment,
     SyncLogEntry, SyncMatch, SyncResult,
 };
-use crate::services::{client_service, enrollment_service};
+use crate::models::CreateProviderInput;
+use crate::services::{client_service, conversation_service, enrollment_service, provider_service};
 
 /// Internal struct for matching local enrollments against portal data.
 struct LocalEnrollment {
@@ -310,19 +311,19 @@ pub fn import_portal_members(
         let client_input = CreateClientInput {
             first_name: member.first_name.clone(),
             last_name: member.last_name.clone(),
-            middle_name: None,
+            middle_name: member.middle_name.clone(),
             dob: member.dob.clone(),
-            gender: None,
+            gender: member.gender.clone(),
             phone: member.phone.clone(),
             phone2: None,
             email: member.email.clone(),
-            address_line1: None,
-            address_line2: None,
+            address_line1: member.address_line1.clone(),
+            address_line2: member.address_line2.clone(),
             city: member.city.clone(),
             state: member.state.clone(),
-            zip: None,
-            county: None,
-            mbi: None,
+            zip: member.zip.clone(),
+            county: member.county.clone(),
+            mbi: member.mbi.clone(),
             part_a_date: None,
             part_b_date: None,
             orec: None,
@@ -330,9 +331,10 @@ pub fn import_portal_members(
             is_dual_eligible: None,
             dual_status_code: None,
             lis_level: None,
-            medicaid_id: None,
+            medicaid_id: member.medicaid_id.clone(),
             lead_source: Some("carrier_sync".to_string()),
             original_effective_date: None,
+            member_record_locator: member.member_record_locator.clone(),
             tags: None,
             notes: None,
         };
@@ -348,8 +350,24 @@ pub fn import_portal_members(
             }
         };
 
-        let status_code = match member.status.as_deref().map(|s| s.to_lowercase()) {
-            Some(ref s) if s.contains("active") && !s.contains("inactive") => "ACTIVE",
+        let event_data = serde_json::json!({
+            "carrier_id": carrier_id,
+            "source": "carrier_sync",
+        })
+        .to_string();
+        let _ = conversation_service::create_system_event(
+            conn,
+            &client.id,
+            "CLIENT_IMPORTED",
+            Some(&event_data),
+        );
+
+        let status_code = match (
+            member.status.as_deref().map(|s| s.to_lowercase()),
+            member.policy_status.as_deref().map(|s| s.to_lowercase()),
+        ) {
+            (Some(ref s), _) if s.contains("active") && !s.contains("inactive") => "ACTIVE",
+            (_, Some(ref p)) if p.contains("active") && !p.contains("inactive") => "ACTIVE",
             _ => "PENDING",
         };
 
@@ -363,7 +381,7 @@ pub fn import_portal_members(
             pbp_number: None,
             effective_date: member.effective_date.clone(),
             termination_date: None,
-            application_date: None,
+            application_date: member.application_date.clone(),
             status_code: Some(status_code.to_string()),
             enrollment_period: None,
             disenrollment_reason: None,
@@ -380,6 +398,21 @@ pub fn import_portal_members(
                     member.first_name, member.last_name, e
                 ));
             }
+        }
+
+        // Create provider if present
+        if member.provider_first_name.is_some() || member.provider_last_name.is_some() {
+            let provider_input = CreateProviderInput {
+                client_id: client.id.clone(),
+                first_name: member.provider_first_name.clone(),
+                last_name: member.provider_last_name.clone(),
+                npi: None,
+                specialty: None,
+                phone: None,
+                is_pcp: Some(1),
+                source: Some("carrier_sync".to_string()),
+            };
+            let _ = provider_service::create_provider(conn, &provider_input);
         }
     }
 

@@ -5,4 +5,5 @@ pub mod conversation_service;
 pub mod dashboard_service;
 pub mod enrollment_service;
 pub mod import_service;
+pub mod provider_service;
 pub mod report_service;

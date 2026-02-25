@@ -16,19 +16,18 @@ export function EnrollmentsPage() {
               <th className="h-10 px-4 text-left font-medium text-muted-foreground">Type</th>
               <th className="h-10 px-4 text-left font-medium text-muted-foreground">Status</th>
               <th className="h-10 px-4 text-left font-medium text-muted-foreground">Effective</th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Term</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7} className="h-32 text-center">
+                <td colSpan={6} className="h-32 text-center">
                   <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                 </td>
               </tr>
             ) : !enrollments || enrollments.length === 0 ? (
               <tr>
-                <td colSpan={7} className="h-32 text-center text-muted-foreground">
+                <td colSpan={6} className="h-32 text-center text-muted-foreground">
                   No enrollments found.
                 </td>
               </tr>
@@ -41,7 +40,6 @@ export function EnrollmentsPage() {
                   <td className="px-4 py-3">{e.plan_type || "\u2014"}</td>
                   <td className="px-4 py-3">{e.status || "\u2014"}</td>
                   <td className="px-4 py-3">{e.effective_date || "\u2014"}</td>
-                  <td className="px-4 py-3">{e.termination_date || "\u2014"}</td>
                 </tr>
               ))
             )}

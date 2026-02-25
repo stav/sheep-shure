@@ -29,7 +29,8 @@ None needed. The session cookies are HttpOnly so JS can't read them anyway, but 
 1. Read `window.__orinoco_config.VERSION` for the client version header
 2. Call the `CSRFToken` persisted query to get a fresh CSRF token
 3. Page through `ListBookOfBusinessContacts` (100 members per page) using persisted query hash
-4. Collect all members and navigate to `compass-sync.localhost/data`
+4. For each member, call `GetBookOfBusinessContact` (batched 5 at a time) to fetch detail fields (address, zip, county, gender, MBI, middle name)
+5. Collect all members and navigate to `compass-sync.localhost/data`
 
 ### Persisted Query Hashes
 
@@ -37,6 +38,7 @@ None needed. The session cookies are HttpOnly so JS can't read them anyway, but 
 |-------|-------------|
 | `CSRFToken` | `0ba70438537351c55da05b9cec107834cf0e6e1126b9107bb382cba283d9dc5a` |
 | `ListBookOfBusinessContacts` | `881c07f52080a6a6a04c653b03fa4520acfd30de90ab0ac6ca4caa161f6bbc95` |
+| `GetBookOfBusinessContact` | `bbc3ff06615745839c96d4823ef9b60f6171948d0bb8a5f31176ee618aca0c56` |
 
 ### Request Shape
 
@@ -77,6 +79,23 @@ None needed. The session cookies are HttpOnly so JS can't read them anyway, but 
 | `city` | `city` |
 | `primary_phone` | `phone` |
 | `email` | `email` |
+
+### Detail Fields (from `GetBookOfBusinessContact`)
+
+| API Field | PortalMember Field |
+|-----------|--------------------|
+| `gender` | `gender` |
+| `middle_name` | `middle_name` |
+| `address` | `address_line1` |
+| `address2` | `address_line2` |
+| `zip_code` | `zip` |
+| `county` | `county` |
+| `medicare_beneficiary_id` | `mbi` |
+| `application_created_at` | `application_date` |
+| `member_record_locator` | `member_record_locator` |
+| `medicaid_id` | `medicaid_id` |
+| `provider.first_name` | `provider_first_name` |
+| `provider.last_name` | `provider_last_name` |
 
 ### Reqwest Fallback
 

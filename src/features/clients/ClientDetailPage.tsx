@@ -170,7 +170,6 @@ export function ClientDetailPage() {
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Type</th>
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Status</th>
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Effective</th>
-                  <th className="h-10 px-4 text-left font-medium text-muted-foreground">Term</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,7 +180,6 @@ export function ClientDetailPage() {
                     <td className="px-4 py-3">{e.plan_type || "\u2014"}</td>
                     <td className="px-4 py-3">{e.status || "\u2014"}</td>
                     <td className="px-4 py-3">{e.effective_date || "\u2014"}</td>
-                    <td className="px-4 py-3">{e.termination_date || "\u2014"}</td>
                   </tr>
                 ))}
               </tbody>
