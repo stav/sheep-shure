@@ -1,12 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
-import {
-  CheckCircle2,
-  AlertTriangle,
-  Users,
-  ArrowRightLeft,
-  Loader2,
-} from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,90 +9,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   useOpenCarrierLogin,
   useTriggerCarrierFetch,
   useProcessPortalMembers,
-  useImportPortalMembers,
-  useConfirmDisenrollments,
   useSyncLogs,
   useUpdateExpectedActive,
 } from "@/hooks/useCarrierSync";
 import { useCarriers } from "@/hooks/useClients";
-import { Checkbox } from "@/components/ui/checkbox";
-import type { Carrier, SyncResult, PortalMember, ImportPortalResult, ConfirmDisenrollmentResult } from "@/types";
-
-interface CarrierConfig {
-  id: string;
-  name: string;
-  description: string;
-  status: "available" | "coming_soon";
-}
-
-const CARRIERS: CarrierConfig[] = [
-  {
-    id: "carrier-devoted",
-    name: "Devoted Health",
-    description: "React SPA, GraphQL API",
-    status: "available",
-  },
-  {
-    id: "carrier-caresource",
-    name: "CareSource",
-    description: "DestinationRx, REST API",
-    status: "available",
-  },
-  {
-    id: "carrier-medmutual",
-    name: "Medical Mutual of Ohio",
-    description: "MyBrokerLink, server-rendered",
-    status: "available",
-  },
-  {
-    id: "carrier-uhc",
-    name: "UnitedHealthcare",
-    description: "Jarvis portal, REST APIs",
-    status: "available",
-  },
-  {
-    id: "carrier-humana",
-    name: "Humana",
-    description: "Vantage agent portal",
-    status: "available",
-  },
-  {
-    id: "carrier-anthem",
-    name: "Anthem/Elevance",
-    description: "Broker portal, BOB",
-    status: "available",
-  },
-];
-
-function relativeTime(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z").getTime();
-  const diffMs = now - then;
-  if (diffMs < 0) return "just now";
-
-  const mins = Math.floor(diffMs / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "yesterday";
-  if (days < 30) return `${days}d ago`;
-
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo ago`;
-
-  const years = Math.floor(months / 12);
-  return `${years}y ago`;
-}
+import { CARRIERS } from "./utils";
+import { CarrierTable } from "./CarrierTable";
+import { SyncResultsPanel } from "./SyncResultsPanel";
+import type { SyncResult } from "@/types";
 
 type SyncPhase = "idle" | "login" | "fetching" | "processing";
 
@@ -183,672 +105,107 @@ export function CarrierSyncPage() {
 
   return (
     <div className="space-y-6">
-      {/* Carrier overview table */}
-      <div className="rounded-md border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Carrier</th>
-              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Last Sync</th>
-              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Found</th>
-              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Active</th>
-              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Expected</th>
-              <th className="h-10 px-4 text-right font-medium text-muted-foreground">+/−</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CARRIERS.map((carrier) => {
-              const latestLog = syncLogs?.find((l) => l.carrier_id === carrier.id);
-              const dbCarrier = dbCarriers?.find((c) => c.id === carrier.id);
-              const expected = dbCarrier?.expected_active ?? 0;
-              const found = latestLog?.portal_count ?? null;
-              const active = latestLog?.matched ?? null;
-              const diff = expected > 0 && active !== null ? active - expected : null;
-              const isSelected = selectedCarrier === carrier.id;
-              return (
-                <tr
-                  key={carrier.id}
-                  className={`border-b transition-colors ${
-                    isSelected ? "bg-primary/5" : "hover:bg-muted/50"
-                  }`}
-                >
-                  <td className="px-4 py-3">
-                    <Button
-                      size="sm"
-                      variant={isSelected ? "default" : "outline"}
-                      title="Click to open carrier portal"
-                      disabled={carrier.status === "coming_soon"}
-                      onClick={() => handleOpenPortal(carrier.id)}
-                    >
-                      {carrier.name}
-                    </Button>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {latestLog ? (
-                      <>
-                        {new Date(latestLog.synced_at).toLocaleDateString()}
-                        <span className="ml-2 text-xs opacity-60">
-                          {relativeTime(latestLog.synced_at)}
-                        </span>
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {found ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {active ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {expected > 0 ? expected : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {diff !== null ? (
-                      <span
-                        className={
-                          diff === 0
-                            ? "text-green-600"
-                            : diff > 0
-                              ? "text-blue-600"
-                              : "text-red-600"
-                        }
-                      >
-                        {diff > 0 ? `+${diff}` : diff}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <CarrierTable
+        syncLogs={syncLogs}
+        dbCarriers={dbCarriers}
+        selectedCarrier={selectedCarrier}
+        onSelectCarrier={handleOpenPortal}
+      />
 
       {/* Sync controls */}
       {selectedCarrier && (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Sync{" "}
-                {CARRIERS.find((c) => c.id === selectedCarrier)?.name}
-              </CardTitle>
-              <CardDescription>
-                {syncPhase === "login" &&
-                  "Log in to the carrier portal in the opened window, then click Sync Now."}
-                {syncPhase === "fetching" &&
-                  "Fetching member data from the carrier portal..."}
-                {syncPhase === "processing" &&
-                  "Comparing portal data against local enrollments..."}
-                {syncPhase === "idle" &&
-                  !lastResult &&
-                  "Open the portal, log in, then click Sync Now to fetch and compare member data."}
-                {syncPhase === "idle" &&
-                  lastResult &&
-                  "Sync complete. You can run another sync or open a different carrier."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Button
-                onClick={handleTriggerSync}
-                disabled={syncPhase === "fetching" || syncPhase === "processing"}
-              >
-                {syncPhase === "fetching" || syncPhase === "processing" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRightLeft className="mr-2 h-4 w-4" />
-                )}
-                {syncPhase === "fetching"
-                  ? "Fetching from portal..."
-                  : syncPhase === "processing"
-                    ? "Processing..."
-                    : "Sync Now"}
-              </Button>
-
-              {syncError && (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{syncError}</span>
-                </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Sync{" "}
+              {CARRIERS.find((c) => c.id === selectedCarrier)?.name}
+            </CardTitle>
+            <CardDescription>
+              {syncPhase === "login" &&
+                "Log in to the carrier portal in the opened window, then click Sync Now."}
+              {syncPhase === "fetching" &&
+                "Fetching member data from the carrier portal..."}
+              {syncPhase === "processing" &&
+                "Comparing portal data against local enrollments..."}
+              {syncPhase === "idle" &&
+                !lastResult &&
+                "Open the portal, log in, then click Sync Now to fetch and compare member data."}
+              {syncPhase === "idle" &&
+                lastResult &&
+                "Sync complete. You can run another sync or open a different carrier."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={handleTriggerSync}
+              disabled={syncPhase === "fetching" || syncPhase === "processing"}
+            >
+              {syncPhase === "fetching" || syncPhase === "processing" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
               )}
-            </CardContent>
-          </Card>
-        </>
+              {syncPhase === "fetching"
+                ? "Fetching from portal..."
+                : syncPhase === "processing"
+                  ? "Processing..."
+                  : "Sync Now"}
+            </Button>
+
+            {syncError && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{syncError}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Sync results */}
       {lastResult && (
-        <>
-          <SyncResultsPanel
-            result={lastResult}
-            carrierId={selectedCarrier!}
-            carrier={dbCarriers?.find((c) => c.id === selectedCarrier)}
-            onUpdateExpected={(count) => {
-              if (selectedCarrier) {
-                updateExpectedActive.mutate({
-                  carrierId: selectedCarrier,
-                  expectedActive: count,
-                });
-              }
-            }}
-            onImported={(result, importedMembers) => {
-              if (result.imported > 0) {
-                // Remove successfully imported members from the displayed result
-                setLastResult((prev) => {
-                  if (!prev) return prev;
-                  const importedNames = new Set(
-                    importedMembers.map((m) => `${m.first_name}|${m.last_name}|${m.dob ?? ""}`)
-                  );
-                  return {
-                    ...prev,
-                    new_in_portal: prev.new_in_portal.filter(
-                      (m) => !importedNames.has(`${m.first_name}|${m.last_name}|${m.dob ?? ""}`)
-                    ),
-                  };
-                });
-              }
-            }}
-            onDisenrolled={(confirmedIds) => {
-              // Remove confirmed disenrollments from the displayed result
+        <SyncResultsPanel
+          result={lastResult}
+          carrierId={selectedCarrier!}
+          carrier={dbCarriers?.find((c) => c.id === selectedCarrier)}
+          onUpdateExpected={(count) => {
+            if (selectedCarrier) {
+              updateExpectedActive.mutate({
+                carrierId: selectedCarrier,
+                expectedActive: count,
+              });
+            }
+          }}
+          onImported={(result, importedMembers) => {
+            if (result.imported > 0) {
               setLastResult((prev) => {
                 if (!prev) return prev;
-                const ids = new Set(confirmedIds);
+                const importedNames = new Set(
+                  importedMembers.map((m) => `${m.first_name}|${m.last_name}|${m.dob ?? ""}`)
+                );
                 return {
                   ...prev,
-                  disenrolled: prev.disenrolled.filter(
-                    (d) => !ids.has(d.enrollment_id)
+                  new_in_portal: prev.new_in_portal.filter(
+                    (m) => !importedNames.has(`${m.first_name}|${m.last_name}|${m.dob ?? ""}`)
                   ),
                 };
               });
-            }}
-          />
-        </>
+            }
+          }}
+          onDisenrolled={(confirmedIds) => {
+            setLastResult((prev) => {
+              if (!prev) return prev;
+              const ids = new Set(confirmedIds);
+              return {
+                ...prev,
+                disenrolled: prev.disenrolled.filter(
+                  (d) => !ids.has(d.enrollment_id)
+                ),
+              };
+            });
+          }}
+        />
       )}
-
     </div>
-  );
-}
-
-/** Determine if a portal member is active or inactive based on policy_status / status. */
-function isPortalMemberActive(m: PortalMember): boolean {
-  // Prefer policy_status (granular: "Active Policy", "Future Active Policy", etc.)
-  const ps = (m.policy_status || "").toLowerCase();
-  if (ps) {
-    if (ps.includes("inactive")) return false;
-    if (ps.includes("active")) return true;
-  }
-  // Fall back to status field ("ENROLLED" / "NOT_ENROLLED")
-  const s = (m.status || "").toLowerCase();
-  return s === "enrolled";
-}
-
-type StatView = "portal" | "active" | "inactive" | "matched" | "disenrolled" | null;
-
-function MatchTierBadge({ tier }: { tier: string }) {
-  switch (tier) {
-    case "exact":
-      return <Badge variant="outline" className="text-xs text-green-700">Exact Match</Badge>;
-    case "fuzzy":
-      return <Badge variant="outline" className="text-xs text-amber-600">Fuzzy Match</Badge>;
-    case "mbi":
-      return <Badge variant="outline" className="text-xs text-blue-600">MBI Match</Badge>;
-    default:
-      return <Badge variant="outline" className="text-xs text-green-700">Matched</Badge>;
-  }
-}
-
-function SyncResultsPanel({
-  result,
-  carrierId,
-  carrier,
-  onUpdateExpected,
-  onImported,
-  onDisenrolled,
-}: {
-  result: SyncResult;
-  carrierId: string;
-  carrier?: Carrier;
-  onUpdateExpected: (count: number) => void;
-  onImported: (result: ImportPortalResult, members: PortalMember[]) => void;
-  onDisenrolled: (confirmedIds: string[]) => void;
-}) {
-  // All portal members = matched + new
-  const allPortalMembers: PortalMember[] = [
-    ...result.matched_members.map((m) => m.portal_member),
-    ...result.new_in_portal,
-  ];
-  const activeMembers = allPortalMembers.filter((m) => isPortalMemberActive(m));
-  const inactiveMembers = allPortalMembers.filter((m) => !isPortalMemberActive(m));
-
-  const expectedActive = carrier?.expected_active ?? 0;
-  const hasExpected = expectedActive > 0;
-  const matchesExpected = hasExpected && activeMembers.length === expectedActive;
-
-  const [editing, setEditing] = useState(false);
-  const [editValue, setEditValue] = useState(String(expectedActive));
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [expandedStat, setExpandedStat] = useState<StatView>(null);
-
-  // Import state
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-  const [importResult, setImportResult] = useState<ImportPortalResult | null>(null);
-  const importMembers = useImportPortalMembers();
-
-  // Disenrollment confirmation state
-  const [selectedDisenrollIds, setSelectedDisenrollIds] = useState<Set<string>>(new Set());
-  const [disenrollResult, setDisenrollResult] = useState<ConfirmDisenrollmentResult | null>(null);
-  const confirmDisenrollments = useConfirmDisenrollments();
-
-  useEffect(() => {
-    if (editing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [editing]);
-
-  const handleSaveExpected = () => {
-    const parsed = parseInt(editValue, 10);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onUpdateExpected(parsed);
-    }
-    setEditing(false);
-  };
-
-  const toggleStat = (stat: StatView) =>
-    setExpandedStat((prev) => (prev === stat ? null : stat));
-
-  const toggleSelect = (index: number) => {
-    setSelectedIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (selectedIndices.size === result.new_in_portal.length) {
-      setSelectedIndices(new Set());
-    } else {
-      setSelectedIndices(new Set(result.new_in_portal.map((_, i) => i)));
-    }
-  };
-
-  const handleImport = () => {
-    const members = result.new_in_portal.filter((_, i) => selectedIndices.has(i));
-    if (members.length === 0) return;
-
-    setImportResult(null);
-    importMembers.mutate(
-      { carrierId, membersJson: JSON.stringify(members) },
-      {
-        onSuccess: (res) => {
-          setImportResult(res);
-          setSelectedIndices(new Set());
-          onImported(res, members);
-        },
-        onError: (err) => {
-          setImportResult({ imported: 0, errors: [String(err)] });
-        },
-      }
-    );
-  };
-
-  const statBox = (
-    label: string,
-    count: number,
-    stat: StatView,
-    color: string,
-    extra?: React.ReactNode,
-  ) => (
-    <div
-      className={`cursor-pointer rounded-md border p-3 text-center transition-colors hover:bg-muted/50 ${
-        expandedStat === stat ? "ring-2 ring-primary" : ""
-      }`}
-      onClick={() => toggleStat(stat)}
-    >
-      <div className={`text-2xl font-bold ${color}`}>{count}{extra}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-    </div>
-  );
-
-  const portalMemberRow = (m: PortalMember, key: string | number) => (
-    <div
-      key={key}
-      className="flex items-center justify-between rounded-md border p-2 text-sm"
-    >
-      <span className="font-medium">
-        {m.first_name} {m.last_name}
-      </span>
-      <span className="text-muted-foreground">
-        {[m.city, m.state].filter(Boolean).join(", ") || "—"}
-      </span>
-      <span className="text-muted-foreground">{m.plan_name ?? "—"}</span>
-      <Badge variant={isPortalMemberActive(m) ? "secondary" : "destructive"} className="text-xs">
-        {isPortalMemberActive(m) ? "Active" : "Inactive"}
-      </Badge>
-    </div>
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <CheckCircle2 className="h-5 w-5 text-green-500" />
-          Sync Complete — {result.carrier_name}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Summary stat boxes — clickable */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-          {statBox("In Portal", result.portal_count, "portal", "")}
-          <div
-            className={`cursor-pointer rounded-md border p-3 text-center transition-colors hover:bg-muted/50 ${
-              expandedStat === "active" ? "ring-2 ring-primary" : ""
-            }`}
-            onClick={() => {
-              if (editing) return;
-              toggleStat("active");
-            }}
-            onDoubleClick={() => {
-              setEditValue(String(expectedActive));
-              setEditing(true);
-            }}
-            title="Click to view members, double-click to set expected count"
-          >
-            <div className="text-2xl font-bold">
-              <span className={hasExpected ? (matchesExpected ? "text-green-600" : "text-red-600") : "text-green-600"}>
-                {activeMembers.length}
-              </span>
-              {hasExpected && (
-                <span className="text-base font-normal text-muted-foreground">
-                  {" / "}
-                  {expectedActive}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Active{hasExpected ? (matchesExpected ? " ✓" : " ✗") : ""}
-            </div>
-            {editing && (
-              <div
-                className="mt-2 flex items-center gap-1"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  ref={inputRef}
-                  type="number"
-                  min="0"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveExpected();
-                    if (e.key === "Escape") setEditing(false);
-                  }}
-                  onBlur={handleSaveExpected}
-                  className="h-7 w-16 rounded border bg-background px-2 text-center text-sm"
-                />
-              </div>
-            )}
-          </div>
-          {statBox("Inactive", inactiveMembers.length, "inactive", "text-red-600")}
-          {statBox("Matched", result.matched, "matched", "text-green-600")}
-          {statBox("To Disenroll", result.disenrolled.length, "disenrolled", "text-red-600")}
-        </div>
-
-        {/* Expanded stat detail panel */}
-        {expandedStat === "portal" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {allPortalMembers.map((m, i) => portalMemberRow(m, i))}
-            </div>
-          </ScrollArea>
-        )}
-
-        {expandedStat === "active" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {activeMembers.map((m, i) => portalMemberRow(m, i))}
-            </div>
-          </ScrollArea>
-        )}
-
-        {expandedStat === "inactive" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {inactiveMembers.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  No inactive members.
-                </p>
-              ) : (
-                inactiveMembers.map((m, i) => portalMemberRow(m, i))
-              )}
-            </div>
-          </ScrollArea>
-        )}
-
-        {expandedStat === "matched" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {result.matched_members.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  No matched members.
-                </p>
-              ) : (
-                result.matched_members.map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between rounded-md border border-green-200 bg-green-50 p-2 text-sm dark:border-green-900 dark:bg-green-950"
-                  >
-                    <span className="font-medium">{m.client_name}</span>
-                    <span className="text-muted-foreground">
-                      {m.portal_member.plan_name ?? "—"}
-                    </span>
-                    <MatchTierBadge tier={m.match_tier} />
-                  </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        )}
-
-        {expandedStat === "disenrolled" && (
-          <div>
-            {result.disenrolled.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                No disenrollment candidates.
-              </p>
-            ) : (
-              <>
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-red-600">
-                    Disenrollment Candidates ({result.disenrolled.length})
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        if (selectedDisenrollIds.size === result.disenrolled.length) {
-                          setSelectedDisenrollIds(new Set());
-                        } else {
-                          setSelectedDisenrollIds(new Set(result.disenrolled.map((d) => d.enrollment_id)));
-                        }
-                      }}
-                    >
-                      {selectedDisenrollIds.size === result.disenrolled.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={selectedDisenrollIds.size === 0 || confirmDisenrollments.isPending}
-                      onClick={() => {
-                        const ids = Array.from(selectedDisenrollIds);
-                        setDisenrollResult(null);
-                        confirmDisenrollments.mutate(ids, {
-                          onSuccess: (res) => {
-                            setDisenrollResult(res);
-                            setSelectedDisenrollIds(new Set());
-                            onDisenrolled(ids);
-                          },
-                          onError: (err) => {
-                            setDisenrollResult({ disenrolled: 0, errors: [String(err)] });
-                          },
-                        });
-                      }}
-                    >
-                      {confirmDisenrollments.isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : null}
-                      Confirm Disenrollments ({selectedDisenrollIds.size})
-                    </Button>
-                  </div>
-                </div>
-
-                {disenrollResult && (
-                  <div
-                    className={`mb-2 rounded-md border p-3 text-sm ${
-                      disenrollResult.errors.length > 0
-                        ? "border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
-                        : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950"
-                    }`}
-                  >
-                    <p className="font-medium">
-                      Disenrolled {disenrollResult.disenrolled} member{disenrollResult.disenrolled !== 1 ? "s" : ""} successfully.
-                    </p>
-                    {disenrollResult.errors.map((err, i) => (
-                      <p key={i} className="mt-1 text-destructive">{err}</p>
-                    ))}
-                  </div>
-                )}
-
-                <ScrollArea className="h-48">
-                  <div className="space-y-1">
-                    {result.disenrolled.map((d) => (
-                      <div
-                        key={d.enrollment_id}
-                        className="flex items-center gap-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950"
-                      >
-                        <Checkbox
-                          checked={selectedDisenrollIds.has(d.enrollment_id)}
-                          onCheckedChange={() => {
-                            setSelectedDisenrollIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(d.enrollment_id)) next.delete(d.enrollment_id);
-                              else next.add(d.enrollment_id);
-                              return next;
-                            });
-                          }}
-                        />
-                        <span className="min-w-[140px] font-medium">{d.client_name}</span>
-                        <span className="flex-1 text-muted-foreground">
-                          {d.plan_name ?? "—"}
-                        </span>
-                        <Badge variant="destructive" className="text-xs">
-                          Not in Portal
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* New in portal list with import */}
-        {result.new_in_portal.length > 0 && (
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="flex items-center gap-2 text-sm font-medium">
-                <Users className="h-4 w-4 text-blue-500" />
-                New in Portal ({result.new_in_portal.length})
-              </h4>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={toggleAll}
-                >
-                  {selectedIndices.size === result.new_in_portal.length
-                    ? "Deselect All"
-                    : "Select All"}
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={selectedIndices.size === 0 || importMembers.isPending}
-                  onClick={handleImport}
-                >
-                  {importMembers.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Import Selected ({selectedIndices.size})
-                </Button>
-              </div>
-            </div>
-
-            {/* Import result feedback */}
-            {importResult && (
-              <div
-                className={`mb-2 rounded-md border p-3 text-sm ${
-                  importResult.errors.length > 0
-                    ? "border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
-                    : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950"
-                }`}
-              >
-                <p className="font-medium">
-                  Imported {importResult.imported} member{importResult.imported !== 1 ? "s" : ""} successfully.
-                </p>
-                {importResult.errors.map((err, i) => (
-                  <p key={i} className="mt-1 text-destructive">{err}</p>
-                ))}
-              </div>
-            )}
-
-            <ScrollArea className="h-40">
-              <div className="space-y-1">
-                {result.new_in_portal.map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 rounded-md border border-blue-200 bg-blue-50 p-2 text-sm dark:border-blue-900 dark:bg-blue-950"
-                  >
-                    <Checkbox
-                      checked={selectedIndices.has(i)}
-                      onCheckedChange={() => toggleSelect(i)}
-                    />
-                    <span className="min-w-[140px] font-medium">
-                      {m.first_name} {m.last_name}
-                    </span>
-                    <span className="min-w-[120px] text-muted-foreground">
-                      {[m.city, m.state].filter(Boolean).join(", ") || "—"}
-                    </span>
-                    <span className="flex-1 text-muted-foreground">
-                      {m.plan_name ?? "—"}
-                    </span>
-                    <Badge variant={isPortalMemberActive(m) ? "secondary" : "destructive"} className="text-xs">
-                      {isPortalMemberActive(m) ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-        )}
-
-        {result.disenrolled.length === 0 &&
-          result.new_in_portal.length === 0 &&
-          result.matched_members.length === 0 && (
-            <p className="text-sm text-muted-foreground">
-              No portal data to display.
-            </p>
-          )}
-      </CardContent>
-    </Card>
   );
 }
