@@ -30,9 +30,9 @@ pub trait CarrierPortal: Send + Sync {
 
     /// JS code to inject into the webview after the user has logged in.
     /// The script should fetch member data from the portal API and then navigate to:
-    ///   `http://sheeps-sync.localhost/data?members=<encodeURIComponent(JSON)>`
+    ///   `http://compass-sync.localhost/data?members=<encodeURIComponent(JSON)>`
     /// on success, or:
-    ///   `http://sheeps-sync.localhost/error?message=<encodeURIComponent(msg)>`
+    ///   `http://compass-sync.localhost/error?message=<encodeURIComponent(msg)>`
     /// on failure.
     fn fetch_script(&self) -> &str;
 

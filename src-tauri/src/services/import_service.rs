@@ -787,7 +787,7 @@ fn find_or_create_import_conversation(
     Ok(id)
 }
 
-/// Import call_log records from an external unencrypted SQLite database into SHEEPS.
+/// Import call_log records from an external unencrypted SQLite database into Compass.
 pub fn import_call_log_from_db(
     app_conn: &Connection,
     source_path: &str,
@@ -861,7 +861,7 @@ pub fn import_call_log_from_db(
             src.call_date.as_deref().unwrap_or("no date"),
         );
 
-        // Match lead to SHEEPS client: MBI first, then name+DOB fallback
+        // Match lead to Compass client: MBI first, then name+DOB fallback
         let client_id: Option<String> = if let Some(ref mbi) = src.lead_mbi {
             if !mbi.trim().is_empty() {
                 app_conn
@@ -1768,7 +1768,7 @@ fn get_copy_field<'a>(
         .and_then(|v| v.as_deref())
 }
 
-/// Map a Sirem carrier name to SHEEPS carrier_id.
+/// Map a Sirem carrier name to Compass carrier_id.
 fn map_sirem_carrier(carrier: &str) -> Option<&'static str> {
     let lower = carrier.to_lowercase();
     if lower.contains("humana") {
@@ -1804,7 +1804,7 @@ fn map_sirem_carrier(carrier: &str) -> Option<&'static str> {
     }
 }
 
-/// Map Sirem type_program + type_snp to SHEEPS plan_type_code.
+/// Map Sirem type_program + type_snp to Compass plan_type_code.
 fn map_sirem_plan_type(type_program: Option<&str>, type_snp: Option<&str>) -> &'static str {
     match (type_program, type_snp) {
         (_, Some("D")) => "DSNP",
@@ -1863,8 +1863,8 @@ pub fn import_sirem_from_dump(
         }
     }
 
-    // Map Sirem contact UUID -> SHEEPS client UUID
-    let mut sirem_to_sheeps: HashMap<String, String> = HashMap::new();
+    // Map Sirem contact UUID -> Compass client UUID
+    let mut sirem_to_compass: HashMap<String, String> = HashMap::new();
 
     let total_source_rows = contact_rows.len();
     let mut imported = 0usize;
@@ -1982,7 +1982,7 @@ pub fn import_sirem_from_dump(
 
         match upsert_client(conn, &client_data) {
             Ok((client_id, action)) => {
-                sirem_to_sheeps.insert(sirem_id, client_id);
+                sirem_to_compass.insert(sirem_id, client_id);
                 match action {
                     UpsertAction::Inserted => {
                         imported += 1;
@@ -2026,7 +2026,7 @@ pub fn import_sirem_from_dump(
             None => continue,
         };
 
-        let client_id = match sirem_to_sheeps.get(&sirem_contact_id) {
+        let client_id = match sirem_to_compass.get(&sirem_contact_id) {
             Some(id) => id.clone(),
             None => continue, // contact wasn't imported
         };
@@ -2145,7 +2145,7 @@ pub fn import_sirem_from_dump(
 // LeadsMaster Enrichment
 // =============================================================================
 
-/// Enrich existing SHEEPS clients with data from LeadsMaster SQLite database.
+/// Enrich existing Compass clients with data from LeadsMaster SQLite database.
 pub fn enrich_from_leadsmaster(
     conn: &Connection,
     source_path: &str,
@@ -2225,7 +2225,7 @@ pub fn enrich_from_leadsmaster(
         let dob = src.dob.as_deref().and_then(normalize_date);
         let label = format!("{} {}", first_name, last_name);
 
-        // Find existing SHEEPS client
+        // Find existing Compass client
         let client_id = find_client(conn, mbi.as_deref(), first_name, last_name, dob.as_deref());
         let client_id = match client_id {
             Some(id) => id,

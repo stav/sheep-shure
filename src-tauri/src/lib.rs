@@ -89,5 +89,5 @@ pub fn run() {
             commands::update_carrier_expected_active,
         ])
         .run(tauri::generate_context!())
-        .expect("Error while running SHEEPS application");
+        .expect("Error while running Compass application");
 }

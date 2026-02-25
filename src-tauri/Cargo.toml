@@ -1,12 +1,12 @@
 [package]
-name = "sheeps"
+name = "compass"
 version = "0.1.0"
 description = "Medicare Book of Business Manager"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "sheeps_lib"
+name = "compass_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

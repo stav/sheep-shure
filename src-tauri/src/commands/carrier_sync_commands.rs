@@ -26,7 +26,7 @@ pub async fn open_carrier_login(app: AppHandle, carrier_id: String) -> Result<St
         .initialization_script(&init_script)
         .on_navigation(move |nav_url| {
             let host = nav_url.host_str().unwrap_or("");
-            if host == "sheeps-sync.localhost" {
+            if host == "compass-sync.localhost" {
                 let path = nav_url.path();
                 if path == "/data" {
                     // Extract the members JSON from the query string

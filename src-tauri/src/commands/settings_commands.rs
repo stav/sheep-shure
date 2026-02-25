@@ -18,7 +18,7 @@ pub fn get_database_info(
     db_state: State<'_, DbState>,
     app_data_dir: State<'_, AppDataDir>,
 ) -> Result<DatabaseInfo, String> {
-    let db_path = app_data_dir.0.join("sheeps.db");
+    let db_path = app_data_dir.0.join("compass.db");
     let db_path_str = db_path.to_string_lossy().to_string();
 
     let db_size_bytes = std::fs::metadata(&db_path)
@@ -215,7 +215,7 @@ pub fn backup_database(
     app_data_dir: State<'_, AppDataDir>,
     db_state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let db_path = app_data_dir.0.join("sheeps.db");
+    let db_path = app_data_dir.0.join("compass.db");
     std::fs::copy(&db_path, &destination).map_err(|e| format!("Backup failed: {}", e))?;
 
     // Record the backup timestamp

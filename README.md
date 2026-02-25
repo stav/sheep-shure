@@ -1,4 +1,4 @@
-# SHEEPS
+# Compass
 
 **Medicare Book of Business Manager**
 
@@ -59,7 +59,7 @@ bun run build
 ## Project Structure
 
 ```
-sheeps/
+compass/
 ├── src/                          # Frontend (React + TypeScript)
 │   ├── app/                      # App shell, router, providers
 │   ├── components/

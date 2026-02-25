@@ -35,7 +35,7 @@ None needed. We scrape the live DOM rather than calling APIs, so no token/header
 5. **Build column map** from header table `<th>` elements
 6. **Scrape rows** from body table, mapping by column index
 7. **Paginate**: Click the `>` next-page button, check "X - Y of Z" pagination text for last page
-8. **Navigate** to `sheeps-sync.localhost/data` with collected members
+8. **Navigate** to `compass-sync.localhost/data` with collected members
 
 ### Split-Table Grid Architecture
 

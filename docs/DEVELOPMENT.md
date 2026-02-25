@@ -1,6 +1,6 @@
 # Development Guide
 
-Developer reference for working on the SHEEPS codebase.
+Developer reference for working on the Compass codebase.
 
 ## Architecture Overview
 
@@ -40,7 +40,7 @@ pub struct DbState {
 There is no separate authentication system. The password **is** the encryption key:
 
 1. User enters password
-2. Read salt from `sheeps.salt` (or generate on first run)
+2. Read salt from `compass.salt` (or generate on first run)
 3. Derive 32-byte key via Argon2id (64 MB, 3 iterations, 4 parallelism)
 4. Pass key as `PRAGMA key` to SQLCipher
 5. Verify with `SELECT count(*) FROM sqlite_master` — if it fails, wrong password

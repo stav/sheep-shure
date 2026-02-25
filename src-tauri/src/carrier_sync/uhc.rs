@@ -18,9 +18,9 @@ const INIT_SCRIPT: &str = r#"
         try {
             const urlObj = new URL(url, window.location.origin);
             const opd = urlObj.searchParams.get('opd');
-            if (opd) window.__sheeps_uhc_opd = opd;
+            if (opd) window.__compass_uhc_opd = opd;
             const hp = urlObj.searchParams.get('hasPrincipalOrCorp');
-            if (hp !== null) window.__sheeps_uhc_hasPrincipal = hp;
+            if (hp !== null) window.__compass_uhc_hasPrincipal = hp;
         } catch (e) {}
     }
 
@@ -28,7 +28,7 @@ const INIT_SCRIPT: &str = r#"
         if (!body) return;
         try {
             const parsed = typeof body === 'string' ? JSON.parse(body) : body;
-            if (parsed.partyID) window.__sheeps_uhc_partyID = parsed.partyID;
+            if (parsed.partyID) window.__compass_uhc_partyID = parsed.partyID;
         } catch (e) {}
     }
 
@@ -50,13 +50,13 @@ const INIT_SCRIPT: &str = r#"
     const origOpen = XMLHttpRequest.prototype.open;
     const origSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function(method, url) {
-        this.__sheeps_url = typeof url === 'string' ? url : String(url);
+        this.__compass_url = typeof url === 'string' ? url : String(url);
         return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function(body) {
         try {
-            if (this.__sheeps_url && this.__sheeps_url.includes('bookOfBusiness')) {
-                extractFromUrl(this.__sheeps_url);
+            if (this.__compass_url && this.__compass_url.includes('bookOfBusiness')) {
+                extractFromUrl(this.__compass_url);
                 extractFromBody(body);
             }
         } catch (e) {}
@@ -71,8 +71,8 @@ const INIT_SCRIPT: &str = r#"
 const FETCH_SCRIPT: &str = r#"
 (async () => {
     try {
-        let partyID = window.__sheeps_uhc_partyID;
-        let opd = window.__sheeps_uhc_opd;
+        let partyID = window.__compass_uhc_partyID;
+        let opd = window.__compass_uhc_opd;
 
         // Fallback: try to extract opd from Performance API entries
         if (!opd || !partyID) {
@@ -146,7 +146,7 @@ const FETCH_SCRIPT: &str = r#"
             throw new Error('Could not find agent ID / operator code. Debug: ' + JSON.stringify(debug));
         }
 
-        const hasPrincipal = window.__sheeps_uhc_hasPrincipal || 'false';
+        const hasPrincipal = window.__compass_uhc_hasPrincipal || 'false';
         const url = '/JarvisMemberProfileAPI/azure/api/secure/bookOfBusiness/details/v1' +
             '?hasPrincipalOrCorp=' + encodeURIComponent(hasPrincipal) +
             '&opd=' + encodeURIComponent(opd) +
@@ -214,10 +214,10 @@ const FETCH_SCRIPT: &str = r#"
             };
         });
 
-        window.location.href = 'http://sheeps-sync.localhost/data?members=' +
+        window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(members));
     } catch (e) {
-        window.location.href = 'http://sheeps-sync.localhost/error?message=' +
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
     }
 })();

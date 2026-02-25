@@ -20,7 +20,7 @@ const INIT_SCRIPT: &str = r#"
                          (resource instanceof Request ? resource.url : String(resource));
             if (url.includes('ptb') || url.includes('bob') || url.includes('broker')) {
                 const baseMatch = url.match(/(https:\/\/[^\/]+(?:\/[^\/]+)*\/(?:ptb|bob|broker)[^\/]*)/i);
-                if (baseMatch) window.__sheeps_anthem_api_base = baseMatch[1];
+                if (baseMatch) window.__compass_anthem_api_base = baseMatch[1];
                 let headers = init && init.headers;
                 if (!headers && resource instanceof Request) headers = resource.headers;
                 if (headers) {
@@ -34,7 +34,7 @@ const INIT_SCRIPT: &str = r#"
                         auth = headers['Authorization'] || headers['authorization'];
                     }
                     if (auth && auth.startsWith('Bearer '))
-                        window.__sheeps_anthem_token = auth.substring(7);
+                        window.__compass_anthem_token = auth.substring(7);
                 }
             }
         } catch (e) {}
@@ -44,17 +44,17 @@ const INIT_SCRIPT: &str = r#"
     const origOpen = XMLHttpRequest.prototype.open;
     const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
     XMLHttpRequest.prototype.open = function(method, url) {
-        this.__sheeps_url = typeof url === 'string' ? url : String(url);
+        this.__compass_url = typeof url === 'string' ? url : String(url);
         return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
         try {
-            const url = this.__sheeps_url || '';
+            const url = this.__compass_url || '';
             if (url.includes('ptb') || url.includes('bob') || url.includes('broker')) {
                 if (name.toLowerCase() === 'authorization' && value.startsWith('Bearer '))
-                    window.__sheeps_anthem_token = value.substring(7);
+                    window.__compass_anthem_token = value.substring(7);
                 const baseMatch = url.match(/(https:\/\/[^\/]+(?:\/[^\/]+)*\/(?:ptb|bob|broker)[^\/]*)/i);
-                if (baseMatch) window.__sheeps_anthem_api_base = baseMatch[1];
+                if (baseMatch) window.__compass_anthem_api_base = baseMatch[1];
             }
         } catch (e) {}
         return origSetHeader.apply(this, arguments);
@@ -206,10 +206,10 @@ const FETCH_SCRIPT: &str = r#"
             throw new Error('Found cards but could not scrape members. Debug: ' + JSON.stringify(dbg2));
         }
 
-        window.location.href = 'http://sheeps-sync.localhost/data?members=' +
+        window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(allMembers));
     } catch (e) {
-        window.location.href = 'http://sheeps-sync.localhost/error?message=' +
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
     }
 })();

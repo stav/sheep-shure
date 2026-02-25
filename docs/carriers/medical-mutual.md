@@ -31,7 +31,7 @@ None. This is the simplest implementation — no token interception, no API disc
 3. Find `#member-table` in the parsed document
 4. Iterate `tbody tr` rows, extracting cell values via `td[data-col-name="..."]` selectors
 5. Each `<td>` contains a `.sb-content` child with the actual text
-6. Navigate to `sheeps-sync.localhost/data`
+6. Navigate to `compass-sync.localhost/data`
 
 ### Table Structure
 

@@ -32,7 +32,7 @@ The init script monkey-patches `fetch` and `XMLHttpRequest` to intercept calls t
 The partyID capture proved unreliable with just init script interception (the SPA sometimes makes the call before our script injects). The fetch script implements a three-stage fallback:
 
 #### Stage 1: Check Init Script Captures
-Read `window.__sheeps_uhc_partyID` and `window.__sheeps_uhc_opd`.
+Read `window.__compass_uhc_partyID` and `window.__compass_uhc_opd`.
 
 #### Stage 2: Performance API + Deep Storage Search
 - Check `performance.getEntriesByType('resource')` for URLs containing `bookOfBusiness` and extract `opd` from the query string

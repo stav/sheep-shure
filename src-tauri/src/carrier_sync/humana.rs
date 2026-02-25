@@ -232,10 +232,10 @@ const FETCH_SCRIPT: &str = r#"
             throw new Error('No members found. Debug: ' + JSON.stringify(dbg));
         }
 
-        window.location.href = 'http://sheeps-sync.localhost/data?members=' +
+        window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(allMembers));
     } catch (e) {
-        window.location.href = 'http://sheeps-sync.localhost/error?message=' +
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
     }
 })();

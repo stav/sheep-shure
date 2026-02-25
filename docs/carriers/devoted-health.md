@@ -29,7 +29,7 @@ None needed. The session cookies are HttpOnly so JS can't read them anyway, but 
 1. Read `window.__orinoco_config.VERSION` for the client version header
 2. Call the `CSRFToken` persisted query to get a fresh CSRF token
 3. Page through `ListBookOfBusinessContacts` (100 members per page) using persisted query hash
-4. Collect all members and navigate to `sheeps-sync.localhost/data`
+4. Collect all members and navigate to `compass-sync.localhost/data`
 
 ### Persisted Query Hashes
 

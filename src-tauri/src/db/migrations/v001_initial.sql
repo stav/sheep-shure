@@ -1,4 +1,4 @@
--- V001: Initial schema for SHEEPS Medicare Book of Business Manager
+-- V001: Initial schema for Compass Medicare Book of Business Manager
 
 -- ============================================================================
 -- Reference / Lookup Tables

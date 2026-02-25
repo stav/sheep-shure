@@ -9,7 +9,7 @@ Verify your book of business against carrier portals and auto-update enrollment 
 3. **Sync Now** -- injects JavaScript into the webview that:
    - Fetches member data using the browser's own session cookies/tokens
    - Approach varies by carrier: GraphQL API, REST API, or DOM scraping
-   - Navigates to `sheeps-sync.localhost/data?members=<json>` on success
+   - Navigates to `compass-sync.localhost/data?members=<json>` on success
 4. The Rust `on_navigation` handler intercepts that URL and emits a Tauri event
 5. The frontend receives the event and calls `process_portal_members`
 6. The sync service compares portal members against local enrollments:
@@ -26,7 +26,7 @@ Webview (carrier portal)
   └─ fetch_script()   -- injected when user clicks "Sync Now"
         │
         ├─ fetches data using browser's own cookies
-        └─ navigates to sheeps-sync.localhost/data?members=<json>
+        └─ navigates to compass-sync.localhost/data?members=<json>
               │
               └─ on_navigation handler (Rust)
                     │
@@ -128,7 +128,7 @@ Three distinct patterns emerged across the 5 implementations:
 - **CSRF tokens**: May need a dedicated API call to obtain (Devoted uses a `CSRFToken` GraphQL query)
 - **Custom headers**: Carrier frameworks often require app-specific headers (e.g. `x-orinoco-portal`)
 - **HAR files**: Export from DevTools Network tab -- invaluable for seeing exact request/response patterns
-- **`sheeps-sync.localhost` callback**: The JS navigates to this fake URL to pass data back to Rust; `on_navigation` intercepts it
+- **`compass-sync.localhost` callback**: The JS navigates to this fake URL to pass data back to Rust; `on_navigation` intercepts it
 - **Cross-origin APIs**: Some portals (CareSource/DRX) use a different domain for the API. Use `init_script` to monkey-patch `fetch`/`XHR` and capture Bearer tokens from the SPA's own calls
 - **Date range limits**: Some APIs limit query windows (CareSource: 31 days). Iterate through multiple date ranges and deduplicate by member ID
 - **Server-rendered HTML**: The simplest portals (Medical Mutual) render everything in HTML. Use `DOMParser` to parse the page and extract data from the DOM -- no API interception needed

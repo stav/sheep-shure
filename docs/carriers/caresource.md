@@ -28,16 +28,16 @@ The init script monkey-patches both `fetch` and `XMLHttpRequest.setRequestHeader
 2. **Agent GUID** extracted from URL path via regex `/Agent/([0-9a-f-]{36})/`
 3. **API base URL** (e.g., `https://www.drxwebservices.com/spa2026/v1`) — the year changes annually
 
-These are stored on `window.__sheeps_drx_token`, `window.__sheeps_drx_agent_guid`, and `window.__sheeps_drx_api_base`.
+These are stored on `window.__compass_drx_token`, `window.__compass_drx_agent_guid`, and `window.__compass_drx_api_base`.
 
 ### Fetch Script Flow
 
-1. Read captured token and agent GUID from `window.__sheeps_drx_*`
+1. Read captured token and agent GUID from `window.__compass_drx_*`
 2. If not captured yet, instruct the user to navigate to the Reports page first (triggers an API call)
 3. Build 31-day date ranges from Oct 1 of the previous year through today
 4. For each range, POST to `/Agent/{guid}/MemberProfileSearch` with date window
 5. Deduplicate by `memberID` using a `Map`
-6. Navigate to `sheeps-sync.localhost/data`
+6. Navigate to `compass-sync.localhost/data`
 
 ### Date Range Windowing
 

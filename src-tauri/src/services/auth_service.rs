@@ -12,8 +12,8 @@ const ARGON2_T_COST: u32 = 3;
 const ARGON2_M_COST: u32 = 65536; // 64 MB
 const ARGON2_P_COST: u32 = 4;
 const KEY_LENGTH: usize = 32;
-const SALT_FILE: &str = "sheeps.salt";
-const DB_FILE: &str = "sheeps.db";
+const SALT_FILE: &str = "compass.salt";
+const DB_FILE: &str = "compass.db";
 
 /// Check if this is a first run (no salt file exists)
 pub fn is_first_run(app_data_dir: &Path) -> bool {

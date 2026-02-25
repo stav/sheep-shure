@@ -58,7 +58,7 @@ function getPageTitle(pathname: string): string {
   if (pageTitles[pathname]) return pageTitles[pathname];
   if (pathname.match(/^\/clients\/[^/]+\/edit$/)) return "Edit Client";
   if (pathname.match(/^\/clients\/[^/]+$/)) return "Client Detail";
-  return "SHEEPS";
+  return "Compass";
 }
 
 export function AppLayout() {
@@ -122,9 +122,9 @@ export function AppLayout() {
           {/* Logo */}
           <div className="flex h-14 items-center border-b px-4">
             {sidebarCollapsed ? (
-              <span className="mx-auto text-lg font-bold text-primary">S</span>
+              <span className="mx-auto text-lg font-bold text-primary">C</span>
             ) : (
-              <span className="text-lg font-bold text-primary">SHEEPS</span>
+              <span className="text-lg font-bold text-primary">Compass</span>
             )}
           </div>
 

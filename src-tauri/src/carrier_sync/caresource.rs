@@ -148,10 +148,10 @@ const FETCH_SCRIPT: &str = r#"
             );
         }
 
-        window.location.href = 'http://sheeps-sync.localhost/data?members=' +
+        window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(members));
     } catch (e) {
-        window.location.href = 'http://sheeps-sync.localhost/error?message=' +
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
     }
 })();

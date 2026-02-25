@@ -184,7 +184,7 @@ export function SettingsPage() {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const destination = await save({
         filters: [{ name: "Database", extensions: ["db"] }],
-        defaultPath: `sheeps_backup_${new Date().toISOString().slice(0, 10)}.db`,
+        defaultPath: `compass_backup_${new Date().toISOString().slice(0, 10)}.db`,
       });
       if (destination) {
         await tauriInvoke("backup_database", { destination });
@@ -384,7 +384,7 @@ export function SettingsPage() {
       {/* About */}
       <Card>
         <CardHeader>
-          <CardTitle>About SHEEPS</CardTitle>
+          <CardTitle>About Compass</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-sm">Version 0.1.0</p>
