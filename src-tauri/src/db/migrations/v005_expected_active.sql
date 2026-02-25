@@ -1,0 +1,1 @@
+ALTER TABLE carriers ADD COLUMN expected_active INTEGER DEFAULT 0;

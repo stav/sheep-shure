@@ -36,14 +36,8 @@ export interface ClientListItem {
   first_name: string;
   last_name: string;
   dob?: string;
-  phone?: string;
-  email?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  mbi?: string;
-  is_active: boolean;
-  is_dual_eligible: boolean;
+  carrier_name?: string;
+  plan_name?: string;
 }
 
 export interface ClientFilters {
@@ -92,6 +86,7 @@ export interface Carrier {
   name: string;
   short_name?: string;
   is_active: boolean;
+  expected_active?: number;
 }
 
 export interface DashboardStats {
@@ -100,7 +95,7 @@ export interface DashboardStats {
   lost_this_month: number;
   pending_enrollments: number;
   by_plan_type: [string, number][];
-  by_carrier: [string, number][];
+  by_carrier: [string, number, number][];
   by_state: [string, number][];
   monthly_trend: MonthlyTrend[];
 }
@@ -248,4 +243,62 @@ export interface UpdateConversationEntryInput {
   email_to?: string;
   email_from?: string;
   is_active?: number;
+}
+
+// ── Carrier Sync ──────────────────────────────────────────────────────────────
+
+export interface PortalMember {
+  first_name: string;
+  last_name: string;
+  member_id?: string;
+  dob?: string;
+  plan_name?: string;
+  effective_date?: string;
+  end_date?: string;
+  status?: string;
+  policy_status?: string;
+  state?: string;
+  city?: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface SyncResult {
+  carrier_name: string;
+  portal_count: number;
+  local_count: number;
+  matched: number;
+  matched_members: SyncMatch[];
+  disenrolled: SyncDisenrollment[];
+  new_in_portal: PortalMember[];
+}
+
+export interface SyncMatch {
+  client_name: string;
+  client_id: string;
+  portal_member: PortalMember;
+}
+
+export interface SyncDisenrollment {
+  client_name: string;
+  client_id: string;
+  enrollment_id: string;
+  plan_name?: string;
+}
+
+export interface ImportPortalResult {
+  imported: number;
+  errors: string[];
+}
+
+export interface SyncLogEntry {
+  id: string;
+  carrier_id: string;
+  carrier_name?: string;
+  synced_at: string;
+  portal_count: number;
+  matched: number;
+  disenrolled: number;
+  new_found: number;
+  status: string;
 }

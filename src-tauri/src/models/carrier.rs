@@ -6,6 +6,7 @@ pub struct Carrier {
     pub name: String,
     pub short_name: Option<String>,
     pub is_active: Option<i32>,
+    pub expected_active: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,5 +15,6 @@ pub struct CarrierWithCounts {
     pub name: String,
     pub short_name: Option<String>,
     pub is_active: Option<i32>,
+    pub expected_active: Option<i32>,
     pub enrollment_count: i64,
 }

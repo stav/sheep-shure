@@ -7,6 +7,7 @@ import {
   FileCheck,
   Upload,
   BarChart3,
+  RefreshCw,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +40,7 @@ const navItems = [
   { to: "/enrollments", label: "Enrollments", icon: FileCheck },
   { to: "/import", label: "Import", icon: Upload },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/carrier-sync", label: "Carrier Sync", icon: RefreshCw },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -48,6 +50,7 @@ const pageTitles: Record<string, string> = {
   "/enrollments": "Enrollments",
   "/import": "Import",
   "/reports": "Reports",
+  "/carrier-sync": "Carrier Sync",
   "/settings": "Settings",
 };
 

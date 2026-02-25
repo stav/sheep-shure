@@ -1,25 +1,50 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   useReactTable,
   getCoreRowModel,
+  getSortedRowModel,
   flexRender,
   createColumnHelper,
+  type SortingState,
 } from "@tanstack/react-table";
 import { useClients } from "@/hooks/useClients";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { ClientListItem, ClientFilters } from "@/types";
-import { Plus, Search, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Plus, Search, X, ChevronLeft, ChevronRight, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 const columnHelper = createColumnHelper<ClientListItem>();
 
 export function ClientsPage() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const perPage = 25;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize state from URL search params
+  const initialSearch = searchParams.get("q") ?? "";
+  const initialPerPage = searchParams.get("perPage") ?? "25";
+  const initialPage = Number(searchParams.get("page") ?? "1") || 1;
+
+  const [search, setSearch] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+  const [page, setPage] = useState(initialPage);
+  const [perPageOption, setPerPageOption] = useState(initialPerPage);
+
+  // Sync state changes to URL (replace, not push)
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (debouncedSearch) params.q = debouncedSearch;
+    if (perPageOption !== "25") params.perPage = perPageOption;
+    if (page > 1) params.page = String(page);
+    setSearchParams(params, { replace: true });
+  }, [debouncedSearch, perPageOption, page, setSearchParams]);
 
   // Simple debounce
   const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -38,52 +63,49 @@ export function ClientsPage() {
     is_active: true,
   }), [debouncedSearch]);
 
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const perPage = perPageOption === "all" ? 9999 : Number(perPageOption);
   const { data, isLoading } = useClients(filters, page, perPage);
 
   const columns = useMemo(() => [
-    columnHelper.accessor((row) => `${row.last_name}, ${row.first_name}`, {
-      id: "name",
-      header: "Name",
+    columnHelper.accessor("first_name", {
+      header: "First Name",
+      cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+    }),
+    columnHelper.accessor("last_name", {
+      header: "Last Name",
       cell: (info) => <span className="font-medium">{info.getValue()}</span>,
     }),
     columnHelper.accessor("dob", {
-      header: "DOB",
+      header: "Age",
+      cell: (info) => {
+        const dob = info.getValue();
+        if (!dob) return "\u2014";
+        const birth = new Date(dob);
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+        return age;
+      },
+    }),
+    columnHelper.accessor("carrier_name", {
+      header: "Carrier",
       cell: (info) => info.getValue() || "\u2014",
     }),
-    columnHelper.accessor("phone", {
-      header: "Phone",
+    columnHelper.accessor("plan_name", {
+      header: "Plan",
       cell: (info) => info.getValue() || "\u2014",
-    }),
-    columnHelper.accessor("email", {
-      header: "Email",
-      cell: (info) => info.getValue() || "\u2014",
-    }),
-    columnHelper.accessor((row) => [row.city, row.state, row.zip].filter(Boolean).join(", "), {
-      id: "location",
-      header: "Location",
-      cell: (info) => info.getValue() || "\u2014",
-    }),
-    columnHelper.accessor("mbi", {
-      header: "MBI",
-      cell: (info) => (
-        <span className="font-mono text-xs">{info.getValue() || "\u2014"}</span>
-      ),
-    }),
-    columnHelper.accessor("is_dual_eligible", {
-      header: "Dual",
-      cell: (info) =>
-        info.getValue() ? (
-          <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-            Dual
-          </span>
-        ) : null,
     }),
   ], []);
 
   const table = useReactTable({
     data: data?.items ?? [],
     columns,
+    state: { sorting },
+    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   });
 
   const totalPages = data ? Math.ceil(data.total / perPage) : 0;
@@ -110,8 +132,16 @@ export function ClientsPage() {
             placeholder="Search by name, MBI, phone, email..."
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 pr-8"
           />
+          {search && (
+            <button
+              onClick={() => handleSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -123,9 +153,18 @@ export function ClientsPage() {
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="h-10 px-4 text-left font-medium text-muted-foreground"
+                    className="h-10 px-4 text-left font-medium text-muted-foreground select-none cursor-pointer hover:text-foreground"
+                    onClick={header.column.getToggleSortingHandler()}
                   >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    <span className="inline-flex items-center gap-1">
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {{
+                        asc: <ArrowUp className="h-3.5 w-3.5" />,
+                        desc: <ArrowDown className="h-3.5 w-3.5" />,
+                      }[header.column.getIsSorted() as string] ?? (
+                        <ArrowUpDown className="h-3.5 w-3.5 opacity-30" />
+                      )}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -163,31 +202,53 @@ export function ClientsPage() {
         </table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Rows per page</span>
+          <Select
+            value={perPageOption}
+            onValueChange={(val) => {
+              setPerPageOption(val);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[70px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[5, 10, 25, 50, 100].map((n) => (
+                <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+              ))}
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      )}
+        {totalPages > 1 && (
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

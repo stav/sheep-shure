@@ -36,10 +36,8 @@ pub fn get_dashboard_stats(conn: &Connection) -> Result<DashboardStats, AppError
         "SELECT COALESCE(e.plan_type_code, 'Unknown'), COUNT(DISTINCT e.client_id) FROM enrollments e WHERE e.status_code = 'ACTIVE' AND e.is_active = 1 GROUP BY e.plan_type_code ORDER BY COUNT(DISTINCT e.client_id) DESC"
     )?;
 
-    // By carrier
-    let by_carrier = query_pairs(conn,
-        "SELECT COALESCE(c.short_name, c.name, 'Unknown'), COUNT(DISTINCT e.client_id) FROM enrollments e LEFT JOIN carriers c ON e.carrier_id = c.id WHERE e.status_code = 'ACTIVE' AND e.is_active = 1 GROUP BY e.carrier_id ORDER BY COUNT(DISTINCT e.client_id) DESC"
-    )?;
+    // By carrier (name, actual active count, expected active count)
+    let by_carrier = query_carrier_breakdown(conn)?;
 
     // By state
     let by_state = query_pairs(conn,
@@ -65,6 +63,26 @@ fn query_pairs(conn: &Connection, sql: &str) -> Result<Vec<(String, i64)>, AppEr
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+fn query_carrier_breakdown(conn: &Connection) -> Result<Vec<(String, i64, i64)>, AppError> {
+    let sql = "SELECT COALESCE(c.short_name, c.name, 'Unknown'), \
+               COUNT(DISTINCT e.client_id), \
+               COALESCE(c.expected_active, 0) \
+               FROM enrollments e \
+               LEFT JOIN carriers c ON e.carrier_id = c.id \
+               WHERE e.status_code = 'ACTIVE' AND e.is_active = 1 \
+               GROUP BY e.carrier_id \
+               ORDER BY COUNT(DISTINCT e.client_id) DESC";
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
     })?;
     let mut result = Vec::new();
     for row in rows {

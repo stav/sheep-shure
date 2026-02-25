@@ -118,3 +118,33 @@ pub fn import_call_log(
         .with_conn(|conn| import_service::import_call_log_from_db(conn, &source_path))
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn import_integrity(
+    source_path: String,
+    state: State<'_, DbState>,
+) -> Result<ActivityImportResult, String> {
+    state
+        .with_conn(|conn| import_service::import_integrity_from_json(conn, &source_path))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn import_sirem(
+    dump_path: String,
+    state: State<'_, DbState>,
+) -> Result<ActivityImportResult, String> {
+    state
+        .with_conn(|conn| import_service::import_sirem_from_dump(conn, &dump_path))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn enrich_leadsmaster(
+    source_path: String,
+    state: State<'_, DbState>,
+) -> Result<ActivityImportResult, String> {
+    state
+        .with_conn(|conn| import_service::enrich_from_leadsmaster(conn, &source_path))
+        .map_err(|e| e.to_string())
+}

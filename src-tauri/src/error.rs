@@ -20,6 +20,15 @@ pub enum AppError {
 
     #[error("IO error: {0}")]
     Io(String),
+
+    #[error("Carrier sync error: {0}")]
+    CarrierSync(String),
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(err: reqwest::Error) -> Self {
+        AppError::CarrierSync(err.to_string())
+    }
 }
 
 impl From<rusqlite::Error> for AppError {

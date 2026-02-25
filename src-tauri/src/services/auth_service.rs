@@ -65,6 +65,9 @@ pub fn unlock_database(app_data_dir: &Path, password: &str) -> Result<Connection
     // Run any pending migrations (for upgrades)
     migrations::run_migrations(&conn)?;
 
+    // Re-run seed data (INSERT OR IGNORE) so new carriers/statuses are added
+    seed::seed_data(&conn)?;
+
     tracing::info!("Database unlocked successfully");
     Ok(conn)
 }

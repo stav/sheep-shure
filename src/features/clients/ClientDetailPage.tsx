@@ -48,7 +48,7 @@ export function ClientDetailPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/clients")}>
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -56,7 +56,7 @@ export function ClientDetailPage() {
               {client.first_name} {client.middle_name ? client.middle_name + " " : ""}{client.last_name}
             </h1>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {client.mbi && <span className="font-mono">MBI: {client.mbi}</span>}
+              <span className="font-mono text-xs">{client.id}</span>
               {!!client.is_dual_eligible && (
                 <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
                   Dual Eligible

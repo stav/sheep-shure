@@ -104,14 +104,8 @@ pub struct ClientListItem {
     pub first_name: String,
     pub last_name: String,
     pub dob: Option<String>,
-    pub phone: Option<String>,
-    pub email: Option<String>,
-    pub city: Option<String>,
-    pub state: Option<String>,
-    pub zip: Option<String>,
-    pub mbi: Option<String>,
-    pub is_active: Option<i32>,
-    pub is_dual_eligible: Option<i32>,
+    pub carrier_name: Option<String>,
+    pub plan_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

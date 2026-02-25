@@ -1,3 +1,4 @@
+pub mod carrier_sync;
 pub mod commands;
 pub mod db;
 pub mod error;
@@ -48,6 +49,7 @@ pub fn run() {
             commands::create_client,
             commands::update_client,
             commands::delete_client,
+            commands::merge_clients,
             commands::delete_all_clients,
             commands::get_enrollments,
             commands::create_enrollment,
@@ -66,6 +68,9 @@ pub fn run() {
             commands::validate_import,
             commands::execute_import,
             commands::import_call_log,
+            commands::import_integrity,
+            commands::import_sirem,
+            commands::enrich_leadsmaster,
             commands::get_dashboard_stats,
             commands::get_report,
             commands::export_report_pdf,
@@ -79,7 +84,9 @@ pub fn run() {
             commands::trigger_carrier_fetch,
             commands::process_portal_members,
             commands::get_carrier_login_url,
+            commands::import_portal_members,
             commands::get_sync_logs,
+            commands::update_carrier_expected_active,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running SHEEPS application");

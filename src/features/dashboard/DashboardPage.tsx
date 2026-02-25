@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { tauriInvoke } from "@/lib/tauri";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area,
+  PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { Users, UserPlus, UserMinus, Clock, Loader2 } from "lucide-react";
@@ -55,7 +55,7 @@ export function DashboardPage() {
   }
 
   const planTypeData = stats.by_plan_type.map(([name, value]) => ({ name, value }));
-  const carrierData = stats.by_carrier.map(([name, value]) => ({ name, value }));
+  const carrierData = stats.by_carrier.map(([name, actual, expected]) => ({ name, actual, expected }));
   const trendData = stats.monthly_trend.map((t) => ({
     month: t.month,
     New: t.new_clients,
@@ -112,22 +112,45 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Carrier Distribution */}
+        {/* Carrier Breakdown — Actual vs Expected */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Clients by Carrier</CardTitle>
+            <CardTitle className="text-lg">Active by Carrier</CardTitle>
           </CardHeader>
           <CardContent>
             {carrierData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={carrierData} layout="vertical" margin={{ left: 80 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="space-y-3">
+                {carrierData.map((c) => {
+                  const hasExpected = c.expected > 0;
+                  const matches = hasExpected && c.actual === c.expected;
+                  return (
+                    <div
+                      key={c.name}
+                      className="flex items-center justify-between rounded-md border px-4 py-3"
+                    >
+                      <span className="text-sm font-medium">{c.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-lg font-bold ${
+                            hasExpected
+                              ? matches
+                                ? "text-green-600"
+                                : "text-red-600"
+                              : ""
+                          }`}
+                        >
+                          {c.actual}
+                        </span>
+                        {hasExpected && (
+                          <span className="text-sm text-muted-foreground">
+                            / {c.expected}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground text-center py-12">No enrollment data yet</p>
             )}

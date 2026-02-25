@@ -92,12 +92,22 @@ pub fn get_clients(
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
     let total: i64 = conn.query_row(&count_sql, params_refs.as_slice(), |row| row.get(0))?;
 
-    // Fetch page
+    // Fetch page — join latest active enrollment + carrier for list display
     let limit_idx = param_values.len() + 1;
     let offset_idx = param_values.len() + 2;
     let select_sql = format!(
-        "SELECT c.id, c.first_name, c.last_name, c.dob, c.phone, c.email, c.city, c.state, c.zip, c.mbi, c.is_active, c.is_dual_eligible
-         FROM clients c {}
+        "SELECT c.id, c.first_name, c.last_name, c.dob, cr.name, e.plan_name
+         FROM clients c
+         LEFT JOIN enrollments e ON e.client_id = c.id
+           AND e.is_active = 1
+           AND e.status_code IN ('ACTIVE', 'PENDING')
+           AND e.id = (
+             SELECT e2.id FROM enrollments e2
+             WHERE e2.client_id = c.id AND e2.is_active = 1 AND e2.status_code IN ('ACTIVE', 'PENDING')
+             ORDER BY e2.effective_date DESC LIMIT 1
+           )
+         LEFT JOIN carriers cr ON e.carrier_id = cr.id
+         {}
          ORDER BY c.last_name, c.first_name
          LIMIT ?{} OFFSET ?{}",
         where_clause, limit_idx, offset_idx
@@ -114,14 +124,8 @@ pub fn get_clients(
             first_name: row.get(1)?,
             last_name: row.get(2)?,
             dob: row.get(3)?,
-            phone: row.get(4)?,
-            email: row.get(5)?,
-            city: row.get(6)?,
-            state: row.get(7)?,
-            zip: row.get(8)?,
-            mbi: row.get(9)?,
-            is_active: row.get(10)?,
-            is_dual_eligible: row.get(11)?,
+            carrier_name: row.get(4)?,
+            plan_name: row.get(5)?,
         })
     })?
     .collect::<Result<Vec<_>, _>>()?;

@@ -1,4 +1,5 @@
 pub mod auth_service;
+pub mod carrier_sync_service;
 pub mod client_service;
 pub mod conversation_service;
 pub mod dashboard_service;

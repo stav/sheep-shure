@@ -19,7 +19,7 @@ pub struct DashboardStats {
     pub lost_this_month: i64,
     pub pending_enrollments: i64,
     pub by_plan_type: Vec<(String, i64)>,
-    pub by_carrier: Vec<(String, i64)>,
+    pub by_carrier: Vec<(String, i64, i64)>,
     pub by_state: Vec<(String, i64)>,
     pub monthly_trend: Vec<MonthlyTrend>,
 }
@@ -40,7 +40,7 @@ impl Default for DashboardStats {
             lost_this_month: 0,
             pending_enrollments: 0,
             by_plan_type: Vec::new(),
-            by_carrier: Vec::new(),
+            by_carrier: Vec::new(), // (name, actual, expected)
             by_state: Vec::new(),
             monthly_trend: Vec::new(),
         }

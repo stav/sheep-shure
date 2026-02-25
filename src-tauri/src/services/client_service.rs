@@ -53,3 +53,36 @@ pub fn update_client(conn: &Connection, id: &str, input: &UpdateClientInput) -> 
 pub fn delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
     client_repo::delete_client(conn, id)
 }
+
+/// Merge `source_id` into `keeper_id`: move all enrollments and conversations
+/// from source to keeper, then hard-delete the source client.
+pub fn merge_clients(conn: &Connection, keeper_id: &str, source_id: &str) -> Result<Client, AppError> {
+    if keeper_id == source_id {
+        return Err(AppError::Validation("Cannot merge a client into itself".to_string()));
+    }
+    // Verify both exist
+    client_repo::get_client(conn, keeper_id)?;
+    client_repo::get_client(conn, source_id)?;
+
+    // Move enrollments
+    conn.execute(
+        "UPDATE enrollments SET client_id = ?1, updated_at = datetime('now') WHERE client_id = ?2",
+        rusqlite::params![keeper_id, source_id],
+    )?;
+    // Move conversations
+    conn.execute(
+        "UPDATE conversations SET client_id = ?1, updated_at = datetime('now') WHERE client_id = ?2",
+        rusqlite::params![keeper_id, source_id],
+    )?;
+    // Move conversation entries
+    conn.execute(
+        "UPDATE conversation_entries SET client_id = ?1, updated_at = datetime('now') WHERE client_id = ?2",
+        rusqlite::params![keeper_id, source_id],
+    )?;
+    // Hard-delete source client
+    conn.execute("DELETE FROM clients WHERE id = ?1", rusqlite::params![source_id])?;
+    // Rebuild FTS
+    conn.execute("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')", [])?;
+
+    client_repo::get_client(conn, keeper_id)
+}
