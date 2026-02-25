@@ -62,7 +62,7 @@ function getPageTitle(pathname: string): string {
 }
 
 export function AppLayout() {
-  const { sidebarCollapsed, toggleSidebar } = useAppStore();
+  const { sidebarCollapsed, toggleSidebar, pageSubtitle, setPageSubtitle } = useAppStore();
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
 
@@ -76,6 +76,11 @@ export function AppLayout() {
   const navigate = useNavigate();
   const pageTitle = getPageTitle(location.pathname);
   useKeyboardShortcuts();
+
+  // Clear subtitle on route changes so stale subtitles don't persist
+  useEffect(() => {
+    setPageSubtitle(null);
+  }, [location.pathname, setPageSubtitle]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -280,7 +285,12 @@ export function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Header */}
           <header className="flex h-14 items-center justify-between border-b bg-card px-6">
-            <h1 className="text-lg font-semibold">{pageTitle}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-semibold">{pageTitle}</h1>
+              {pageSubtitle && (
+                <span className="text-sm text-muted-foreground">{pageSubtitle}</span>
+              )}
+            </div>
             <Button
               variant="outline"
               size="sm"

@@ -206,11 +206,6 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your profile, security, and application settings</p>
-      </div>
-
       {/* Appearance */}
       <AppearanceCard />
 

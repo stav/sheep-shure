@@ -6,13 +6,6 @@ export function EnrollmentsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Enrollments</h1>
-        <p className="text-sm text-muted-foreground">
-          All active enrollments across clients
-        </p>
-      </div>
-
       <div className="rounded-md border">
         <table className="w-full text-sm">
           <thead>

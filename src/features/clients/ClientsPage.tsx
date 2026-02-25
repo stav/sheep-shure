@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAppStore } from "@/stores/appStore";
 import {
   useReactTable,
   getCoreRowModel,
@@ -25,6 +26,7 @@ const columnHelper = createColumnHelper<ClientListItem>();
 
 export function ClientsPage() {
   const navigate = useNavigate();
+  const setPageSubtitle = useAppStore((s) => s.setPageSubtitle);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Initialize state from URL search params
@@ -66,6 +68,12 @@ export function ClientsPage() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const perPage = perPageOption === "all" ? 9999 : Number(perPageOption);
   const { data, isLoading } = useClients(filters, page, perPage);
+
+  // Set page subtitle in nav header
+  useEffect(() => {
+    setPageSubtitle(data ? `${data.total} total clients` : null);
+    return () => setPageSubtitle(null);
+  }, [data, setPageSubtitle]);
 
   const columns = useMemo(() => [
     columnHelper.accessor("first_name", {
@@ -112,20 +120,7 @@ export function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-sm text-muted-foreground">
-            {data ? `${data.total} total clients` : "Loading..."}
-          </p>
-        </div>
-        <Button onClick={() => navigate("/clients/new")}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Client
-        </Button>
-      </div>
-
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -143,6 +138,10 @@ export function ClientsPage() {
             </button>
           )}
         </div>
+        <Button onClick={() => navigate("/clients/new")}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Client
+        </Button>
       </div>
 
       <div className="rounded-md border">

@@ -195,13 +195,6 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Generate and export reports from your Book of Business
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Report Presets Sidebar */}
         <div className="space-y-2">

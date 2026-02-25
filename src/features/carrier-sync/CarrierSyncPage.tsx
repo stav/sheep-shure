@@ -160,17 +160,6 @@ export function CarrierSyncPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">
-          Carrier Portal Sync
-        </h2>
-        <p className="text-muted-foreground">
-          Verify your book of business against carrier portals and auto-update
-          enrollment statuses.
-        </p>
-      </div>
-
       {/* Carrier cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {CARRIERS.map((carrier) => {

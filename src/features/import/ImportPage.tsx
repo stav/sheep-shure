@@ -140,13 +140,6 @@ export function ImportPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold">Import Data</h1>
-        <p className="text-sm text-muted-foreground">
-          Import clients from carrier CSV or XLSX files
-        </p>
-      </div>
-
       {/* Step indicator */}
       <div className="flex items-center gap-2 text-sm">
         {(["select", "map", "validate", "result"] as Step[]).map((s, i) => (
