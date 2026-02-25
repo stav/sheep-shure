@@ -76,6 +76,30 @@ const CARRIERS: CarrierConfig[] = [
   },
 ];
 
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z").getTime();
+  const diffMs = now - then;
+  if (diffMs < 0) return "just now";
+
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days}d ago`;
+
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+
+  const years = Math.floor(months / 12);
+  return `${years}y ago`;
+}
+
 type SyncPhase = "idle" | "login" | "fetching" | "processing";
 
 export function CarrierSyncPage() {
@@ -200,9 +224,16 @@ export function CarrierSyncPage() {
                     </Button>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">
-                    {latestLog
-                      ? new Date(latestLog.synced_at).toLocaleDateString()
-                      : "—"}
+                    {latestLog ? (
+                      <>
+                        {new Date(latestLog.synced_at).toLocaleDateString()}
+                        <span className="ml-2 text-xs opacity-60">
+                          {relativeTime(latestLog.synced_at)}
+                        </span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {found ?? "—"}
