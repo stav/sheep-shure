@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
-  ExternalLink,
   CheckCircle2,
   AlertTriangle,
   Users,
@@ -17,7 +16,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   useOpenCarrierLogin,
@@ -160,80 +158,87 @@ export function CarrierSyncPage() {
 
   return (
     <div className="space-y-6">
-      {/* Carrier cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {CARRIERS.map((carrier) => {
-          const latestLog = syncLogs?.find((l) => l.carrier_id === carrier.id);
-          const dbCarrier = dbCarriers?.find((c) => c.id === carrier.id);
-          const expected = dbCarrier?.expected_active ?? 0;
-          const isSelected = selectedCarrier === carrier.id;
-          return (
-            <Card
-              key={carrier.id}
-              className={
-                carrier.status === "coming_soon"
-                  ? "opacity-60"
-                  : isSelected
-                    ? "ring-2 ring-primary"
-                    : ""
-              }
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">{carrier.name}</CardTitle>
-                  {carrier.status === "coming_soon" ? (
-                    <Badge variant="secondary">Coming Soon</Badge>
-                  ) : expected > 0 ? (
-                    <Badge variant="outline">
-                      Expected: {expected}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline">Available</Badge>
-                  )}
-                </div>
-                <CardDescription>{carrier.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {latestLog && (
-                  <div className="mb-3 text-xs text-muted-foreground">
-                    <div>
-                      Last sync:{" "}
-                      {new Date(latestLog.synced_at).toLocaleString()}
-                    </div>
-                    <div className="mt-0.5">
-                      {latestLog.portal_count} in portal, {latestLog.matched} matched
-                      {latestLog.disenrolled > 0 && (
-                        <span className="text-red-600">
-                          , {latestLog.disenrolled} disenrolled
-                        </span>
-                      )}
-                      {latestLog.new_found > 0 && (
-                        <span className="text-blue-600">
-                          , {latestLog.new_found} new
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <Button
-                  size="sm"
-                  className="w-full"
-                  disabled={carrier.status === "coming_soon"}
-                  onClick={() => handleOpenPortal(carrier.id)}
+      {/* Carrier overview table */}
+      <div className="rounded-md border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/50">
+              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Carrier</th>
+              <th className="h-10 px-4 text-left font-medium text-muted-foreground">Last Sync</th>
+              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Found</th>
+              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Active</th>
+              <th className="h-10 px-4 text-right font-medium text-muted-foreground">Expected</th>
+              <th className="h-10 px-4 text-right font-medium text-muted-foreground">+/−</th>
+            </tr>
+          </thead>
+          <tbody>
+            {CARRIERS.map((carrier) => {
+              const latestLog = syncLogs?.find((l) => l.carrier_id === carrier.id);
+              const dbCarrier = dbCarriers?.find((c) => c.id === carrier.id);
+              const expected = dbCarrier?.expected_active ?? 0;
+              const found = latestLog?.portal_count ?? null;
+              const active = latestLog?.matched ?? null;
+              const diff = expected > 0 && active !== null ? active - expected : null;
+              const isSelected = selectedCarrier === carrier.id;
+              return (
+                <tr
+                  key={carrier.id}
+                  className={`border-b transition-colors ${
+                    isSelected ? "bg-primary/5" : "hover:bg-muted/50"
+                  }`}
                 >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open Portal Login
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+                  <td className="px-4 py-3">
+                    <Button
+                      size="sm"
+                      variant={isSelected ? "default" : "outline"}
+                      title="Click to open carrier portal"
+                      disabled={carrier.status === "coming_soon"}
+                      onClick={() => handleOpenPortal(carrier.id)}
+                    >
+                      {carrier.name}
+                    </Button>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {latestLog
+                      ? new Date(latestLog.synced_at).toLocaleDateString()
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {found ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {active ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {expected > 0 ? expected : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {diff !== null ? (
+                      <span
+                        className={
+                          diff === 0
+                            ? "text-green-600"
+                            : diff > 0
+                              ? "text-blue-600"
+                              : "text-red-600"
+                        }
+                      >
+                        {diff > 0 ? `+${diff}` : diff}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* Sync controls */}
       {selectedCarrier && (
         <>
-          <Separator />
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
@@ -286,7 +291,6 @@ export function CarrierSyncPage() {
       {/* Sync results */}
       {lastResult && (
         <>
-          <Separator />
           <SyncResultsPanel
             result={lastResult}
             carrierId={selectedCarrier!}
@@ -320,52 +324,6 @@ export function CarrierSyncPage() {
         </>
       )}
 
-      {/* Sync history */}
-      {syncLogs && syncLogs.length > 0 && (
-        <>
-          <Separator />
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Sync History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-48">
-                <div className="space-y-2">
-                  {syncLogs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="flex items-center justify-between rounded-md border p-3 text-sm"
-                    >
-                      <div>
-                        <span className="font-medium">
-                          {log.carrier_name ?? log.carrier_id}
-                        </span>
-                        <span className="ml-2 text-muted-foreground">
-                          {new Date(log.synced_at).toLocaleString()}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span>{log.portal_count} portal</span>
-                        <span>{log.matched} matched</span>
-                        {log.disenrolled > 0 && (
-                          <Badge variant="destructive" className="text-xs">
-                            {log.disenrolled} disenrolled
-                          </Badge>
-                        )}
-                        {log.new_found > 0 && (
-                          <Badge variant="secondary" className="text-xs">
-                            {log.new_found} new
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </>
-      )}
     </div>
   );
 }
