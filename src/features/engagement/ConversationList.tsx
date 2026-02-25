@@ -19,7 +19,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 
 function formatRelative(dateStr?: string): string {
   if (!dateStr) return "";
-  const d = new Date(dateStr.replace(" ", "T"));
+  const d = new Date(dateStr.replace(" ", "T") + "Z");
   if (isNaN(d.getTime())) return "";
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();

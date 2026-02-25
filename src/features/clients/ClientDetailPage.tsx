@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info } from "lucide-react";
 import { ClientEngagementSection } from "@/features/engagement";
+import { formatTimestamp } from "@/lib/utils";
 
 const OREC_LABELS: Record<string, string> = {
   "0": "Age",
@@ -216,8 +217,8 @@ export function ClientDetailPage() {
 
       {/* Metadata */}
       <div className="text-xs text-muted-foreground">
-        <p>Created: {client.created_at}</p>
-        <p>Updated: {client.updated_at}</p>
+        <p>Created: {formatTimestamp(client.created_at)}</p>
+        <p>Updated: {formatTimestamp(client.updated_at)}</p>
       </div>
     </div>
   );

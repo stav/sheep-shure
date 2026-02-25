@@ -33,7 +33,7 @@ function formatDuration(seconds: number): string {
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "";
-  const d = new Date(dateStr.replace(" ", "T"));
+  const d = new Date(dateStr.replace(" ", "T") + "Z");
   if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", {
     month: "short",
