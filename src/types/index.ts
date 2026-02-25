@@ -303,6 +303,7 @@ export interface SyncMatch {
   client_name: string;
   client_id: string;
   portal_member: PortalMember;
+  match_tier: string;
 }
 
 export interface SyncDisenrollment {

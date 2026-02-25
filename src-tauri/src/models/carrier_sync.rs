@@ -48,6 +48,7 @@ pub struct SyncMatch {
     pub client_name: String,
     pub client_id: String,
     pub portal_member: PortalMember,
+    pub match_tier: String,
 }
 
 /// A local enrollment that was not found in the portal (candidate for disenrollment).

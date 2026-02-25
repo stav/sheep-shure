@@ -39,12 +39,13 @@ pub fn run_sync(
     let mut new_in_portal: Vec<PortalMember> = Vec::new();
 
     for pm in portal_members {
-        if let Some(local_match) = find_match(&local, pm) {
+        if let Some((local_match, tier)) = find_match(&local, pm) {
             matched_enrollment_ids.push(local_match.enrollment_id.clone());
             matched_members.push(SyncMatch {
                 client_name: format!("{} {}", local_match.client_first_name, local_match.client_last_name),
                 client_id: local_match.client_id.clone(),
                 portal_member: pm.clone(),
+                match_tier: tier.to_string(),
             });
         } else {
             new_in_portal.push(pm.clone());
@@ -118,7 +119,7 @@ fn get_local_enrollments(conn: &Connection, carrier_id: &str) -> Result<Vec<Loca
 ///      b. First name fuzzy-matches (one starts with the other, or edit distance ≤ 2)
 ///         AND DOB matches
 ///      c. MBI matches AND DOB matches
-fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Option<&'a LocalEnrollment> {
+fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Option<(&'a LocalEnrollment, &'static str)> {
     let p_last = portal.last_name.to_ascii_lowercase();
     let p_first = portal.first_name.to_ascii_lowercase();
     let p_dob_norm = portal.dob.as_deref().and_then(normalize_date);
@@ -138,7 +139,7 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
     if let Some(m) = candidates.iter().find(|le| {
         normalize_first_name(&le.client_first_name) == normalize_first_name(&p_first)
     }) {
-        return Some(m);
+        return Some((m, "exact"));
     }
 
     // Tier 2: fuzzy first name + DOB
@@ -147,7 +148,7 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
             fuzzy_first_name(&le.client_first_name, &p_first)
                 && le.client_dob.as_deref().and_then(normalize_date).as_deref() == Some(dob.as_str())
         }) {
-            return Some(m);
+            return Some((m, "fuzzy"));
         }
     }
 
@@ -158,7 +159,7 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
                 le.client_mbi.as_deref() == Some(mbi)
                     && le.client_dob.as_deref().and_then(normalize_date).as_deref() == Some(dob.as_str())
             }) {
-                return Some(m);
+                return Some((m, "mbi"));
             }
         }
     }

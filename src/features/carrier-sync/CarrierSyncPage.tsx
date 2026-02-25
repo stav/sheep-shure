@@ -357,6 +357,19 @@ function isPortalMemberActive(m: PortalMember): boolean {
 
 type StatView = "portal" | "active" | "inactive" | "matched" | "disenrolled" | null;
 
+function MatchTierBadge({ tier }: { tier: string }) {
+  switch (tier) {
+    case "exact":
+      return <Badge variant="outline" className="text-xs text-green-700">Exact Match</Badge>;
+    case "fuzzy":
+      return <Badge variant="outline" className="text-xs text-amber-600">Fuzzy Match</Badge>;
+    case "mbi":
+      return <Badge variant="outline" className="text-xs text-blue-600">MBI Match</Badge>;
+    default:
+      return <Badge variant="outline" className="text-xs text-green-700">Matched</Badge>;
+  }
+}
+
 function SyncResultsPanel({
   result,
   carrierId,
@@ -604,9 +617,7 @@ function SyncResultsPanel({
                     <span className="text-muted-foreground">
                       {m.portal_member.plan_name ?? "—"}
                     </span>
-                    <Badge variant="outline" className="text-xs text-green-700">
-                      Matched
-                    </Badge>
+                    <MatchTierBadge tier={m.match_tier} />
                   </div>
                 ))
               )}
