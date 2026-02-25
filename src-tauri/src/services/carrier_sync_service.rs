@@ -299,6 +299,59 @@ fn log_sync(
     Ok(())
 }
 
+/// Find an existing client by MBI or by (first_name, last_name, DOB).
+/// Returns the client ID if found.
+fn find_existing_client(
+    conn: &Connection,
+    member: &PortalMember,
+) -> Option<String> {
+    // Try MBI match first
+    if let Some(ref mbi) = member.mbi {
+        if !mbi.is_empty() {
+            if let Ok(id) = conn.query_row(
+                "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
+                params![mbi],
+                |row| row.get::<_, String>(0),
+            ) {
+                return Some(id);
+            }
+        }
+    }
+
+    // Name + DOB fallback
+    let dob_normalized = member.dob.as_deref().and_then(normalize_date);
+    if let Some(ref dob) = dob_normalized {
+        // Query all active clients with matching last name, then compare normalized values
+        let mut stmt = conn
+            .prepare("SELECT id, first_name, dob FROM clients WHERE LOWER(last_name) = LOWER(?1) AND is_active = 1")
+            .ok()?;
+        let rows: Vec<(String, String, Option<String>)> = stmt
+            .query_map(params![member.last_name], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .ok()?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (id, db_first, db_dob) in &rows {
+            let db_dob_norm = db_dob.as_deref().and_then(normalize_date);
+            if db_dob_norm.as_deref() != Some(dob.as_str()) {
+                continue;
+            }
+            // Exact first name
+            if normalize_first_name(db_first) == normalize_first_name(&member.first_name) {
+                return Some(id.clone());
+            }
+            // Fuzzy first name
+            if fuzzy_first_name(db_first, &member.first_name) {
+                return Some(id.clone());
+            }
+        }
+    }
+
+    None
+}
+
 /// Import portal members as new clients with enrollments linked to the carrier.
 pub fn import_portal_members(
     conn: &Connection,
@@ -309,43 +362,48 @@ pub fn import_portal_members(
     let mut errors = Vec::new();
 
     for member in members {
-        let client_input = CreateClientInput {
-            first_name: member.first_name.clone(),
-            last_name: member.last_name.clone(),
-            middle_name: member.middle_name.clone(),
-            dob: member.dob.clone(),
-            gender: member.gender.clone(),
-            phone: member.phone.clone(),
-            phone2: None,
-            email: member.email.clone(),
-            address_line1: member.address_line1.clone(),
-            address_line2: member.address_line2.clone(),
-            city: member.city.clone(),
-            state: member.state.clone(),
-            zip: member.zip.clone(),
-            county: member.county.clone(),
-            mbi: member.mbi.clone(),
-            part_a_date: None,
-            part_b_date: None,
-            orec: None,
-            is_dual_eligible: None,
-            dual_status_code: None,
-            lis_level: None,
-            medicaid_id: member.medicaid_id.clone(),
-            lead_source: Some("carrier_sync".to_string()),
-            member_record_locator: member.member_record_locator.clone(),
-            tags: None,
-            notes: None,
-        };
+        // Check for an existing client before creating a new one
+        let client_id = if let Some(existing_id) = find_existing_client(conn, member) {
+            existing_id
+        } else {
+            let client_input = CreateClientInput {
+                first_name: member.first_name.clone(),
+                last_name: member.last_name.clone(),
+                middle_name: member.middle_name.clone(),
+                dob: member.dob.clone(),
+                gender: member.gender.clone(),
+                phone: member.phone.clone(),
+                phone2: None,
+                email: member.email.clone(),
+                address_line1: member.address_line1.clone(),
+                address_line2: member.address_line2.clone(),
+                city: member.city.clone(),
+                state: member.state.clone(),
+                zip: member.zip.clone(),
+                county: member.county.clone(),
+                mbi: member.mbi.clone(),
+                part_a_date: None,
+                part_b_date: None,
+                orec: None,
+                is_dual_eligible: None,
+                dual_status_code: None,
+                lis_level: None,
+                medicaid_id: member.medicaid_id.clone(),
+                lead_source: Some("carrier_sync".to_string()),
+                member_record_locator: member.member_record_locator.clone(),
+                tags: None,
+                notes: None,
+            };
 
-        let client = match client_service::create_client(conn, &client_input) {
-            Ok(c) => c,
-            Err(e) => {
-                errors.push(format!(
-                    "{} {}: failed to create client — {}",
-                    member.first_name, member.last_name, e
-                ));
-                continue;
+            match client_service::create_client(conn, &client_input) {
+                Ok(c) => c.id,
+                Err(e) => {
+                    errors.push(format!(
+                        "{} {}: failed to create client — {}",
+                        member.first_name, member.last_name, e
+                    ));
+                    continue;
+                }
             }
         };
 
@@ -356,7 +414,7 @@ pub fn import_portal_members(
         .to_string();
         let _ = conversation_service::create_system_event(
             conn,
-            &client.id,
+            &client_id,
             "CLIENT_IMPORTED",
             Some(&event_data),
         );
@@ -371,7 +429,7 @@ pub fn import_portal_members(
         };
 
         let enrollment_input = CreateEnrollmentInput {
-            client_id: client.id.clone(),
+            client_id: client_id.clone(),
             plan_id: None,
             carrier_id: Some(carrier_id.to_string()),
             plan_type_code: None,
@@ -393,7 +451,7 @@ pub fn import_portal_members(
             Ok(_) => imported += 1,
             Err(e) => {
                 errors.push(format!(
-                    "{} {}: client created but enrollment failed — {}",
+                    "{} {}: enrollment failed — {}",
                     member.first_name, member.last_name, e
                 ));
             }
@@ -402,7 +460,7 @@ pub fn import_portal_members(
         // Create provider if present
         if member.provider_first_name.is_some() || member.provider_last_name.is_some() {
             let provider_input = CreateProviderInput {
-                client_id: client.id.clone(),
+                client_id: client_id.clone(),
                 first_name: member.provider_first_name.clone(),
                 last_name: member.provider_last_name.clone(),
                 npi: None,
