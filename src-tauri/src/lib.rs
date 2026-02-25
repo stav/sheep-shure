@@ -85,6 +85,7 @@ pub fn run() {
             commands::process_portal_members,
             commands::get_carrier_login_url,
             commands::import_portal_members,
+            commands::confirm_disenrollments,
             commands::get_sync_logs,
             commands::update_carrier_expected_active,
         ])

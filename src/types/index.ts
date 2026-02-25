@@ -317,6 +317,11 @@ export interface ImportPortalResult {
   errors: string[];
 }
 
+export interface ConfirmDisenrollmentResult {
+  disenrolled: number;
+  errors: string[];
+}
+
 export interface SyncLogEntry {
   id: string;
   carrier_id: string;

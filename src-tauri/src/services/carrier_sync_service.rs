@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::{
-    CreateClientInput, CreateEnrollmentInput, ImportPortalResult, PortalMember, SyncDisenrollment,
-    SyncLogEntry, SyncMatch, SyncResult,
+    ConfirmDisenrollmentResult, CreateClientInput, CreateEnrollmentInput, ImportPortalResult,
+    PortalMember, SyncDisenrollment, SyncLogEntry, SyncMatch, SyncResult,
 };
 use crate::models::CreateProviderInput;
 use crate::services::{client_service, conversation_service, enrollment_service, provider_service};
@@ -51,11 +51,11 @@ pub fn run_sync(
         }
     }
 
-    // 3. Local enrollments NOT matched in portal → disenroll
+    // 3. Local enrollments NOT matched in portal → candidates for disenrollment
+    //    (reported to the user for confirmation, NOT auto-disenrolled)
     let mut disenrolled: Vec<SyncDisenrollment> = Vec::new();
     for le in &local {
         if !matched_enrollment_ids.contains(&le.enrollment_id) {
-            disenroll_enrollment(conn, &le.enrollment_id)?;
             disenrolled.push(SyncDisenrollment {
                 client_name: format!("{} {}", le.client_first_name, le.client_last_name),
                 client_id: le.client_id.clone(),
@@ -67,8 +67,8 @@ pub fn run_sync(
 
     let matched = matched_enrollment_ids.len();
 
-    // 4. Log the sync
-    log_sync(conn, carrier_id, portal_count, matched, disenrolled.len(), new_in_portal.len())?;
+    // 4. Log the sync (disenrolled=0 because disenrollment is now user-confirmed)
+    log_sync(conn, carrier_id, portal_count, matched, 0, new_in_portal.len())?;
 
     Ok(SyncResult {
         carrier_name: carrier_name.to_string(),
@@ -415,6 +415,24 @@ pub fn import_portal_members(
     }
 
     Ok(ImportPortalResult { imported, errors })
+}
+
+/// Confirm disenrollment for selected enrollment IDs.
+pub fn confirm_disenrollments(
+    conn: &Connection,
+    enrollment_ids: &[String],
+) -> Result<ConfirmDisenrollmentResult, AppError> {
+    let mut disenrolled = 0usize;
+    let mut errors = Vec::new();
+
+    for eid in enrollment_ids {
+        match disenroll_enrollment(conn, eid) {
+            Ok(()) => disenrolled += 1,
+            Err(e) => errors.push(format!("Enrollment {}: {}", eid, e)),
+        }
+    }
+
+    Ok(ConfirmDisenrollmentResult { disenrolled, errors })
 }
 
 /// Get sync log history for a carrier (most recent first).

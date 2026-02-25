@@ -22,12 +22,13 @@ import {
   useTriggerCarrierFetch,
   useProcessPortalMembers,
   useImportPortalMembers,
+  useConfirmDisenrollments,
   useSyncLogs,
   useUpdateExpectedActive,
 } from "@/hooks/useCarrierSync";
 import { useCarriers } from "@/hooks/useClients";
 import { Checkbox } from "@/components/ui/checkbox";
-import type { Carrier, SyncResult, PortalMember, ImportPortalResult } from "@/types";
+import type { Carrier, SyncResult, PortalMember, ImportPortalResult, ConfirmDisenrollmentResult } from "@/types";
 
 interface CarrierConfig {
   id: string;
@@ -320,6 +321,19 @@ export function CarrierSyncPage() {
                 });
               }
             }}
+            onDisenrolled={(confirmedIds) => {
+              // Remove confirmed disenrollments from the displayed result
+              setLastResult((prev) => {
+                if (!prev) return prev;
+                const ids = new Set(confirmedIds);
+                return {
+                  ...prev,
+                  disenrolled: prev.disenrolled.filter(
+                    (d) => !ids.has(d.enrollment_id)
+                  ),
+                };
+              });
+            }}
           />
         </>
       )}
@@ -349,12 +363,14 @@ function SyncResultsPanel({
   carrier,
   onUpdateExpected,
   onImported,
+  onDisenrolled,
 }: {
   result: SyncResult;
   carrierId: string;
   carrier?: Carrier;
   onUpdateExpected: (count: number) => void;
   onImported: (result: ImportPortalResult, members: PortalMember[]) => void;
+  onDisenrolled: (confirmedIds: string[]) => void;
 }) {
   // All portal members = matched + new
   const allPortalMembers: PortalMember[] = [
@@ -377,6 +393,11 @@ function SyncResultsPanel({
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [importResult, setImportResult] = useState<ImportPortalResult | null>(null);
   const importMembers = useImportPortalMembers();
+
+  // Disenrollment confirmation state
+  const [selectedDisenrollIds, setSelectedDisenrollIds] = useState<Set<string>>(new Set());
+  const [disenrollResult, setDisenrollResult] = useState<ConfirmDisenrollmentResult | null>(null);
+  const confirmDisenrollments = useConfirmDisenrollments();
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -532,7 +553,7 @@ function SyncResultsPanel({
           </div>
           {statBox("Inactive", inactiveMembers.length, "inactive", "text-red-600")}
           {statBox("Matched", result.matched, "matched", "text-green-600")}
-          {statBox("Disenrolled", result.disenrolled.length, "disenrolled", "text-red-600")}
+          {statBox("To Disenroll", result.disenrolled.length, "disenrolled", "text-red-600")}
         </div>
 
         {/* Expanded stat detail panel */}
@@ -594,30 +615,109 @@ function SyncResultsPanel({
         )}
 
         {expandedStat === "disenrolled" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {result.disenrolled.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  No disenrolled members.
-                </p>
-              ) : (
-                result.disenrolled.map((d) => (
-                  <div
-                    key={d.enrollment_id}
-                    className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950"
-                  >
-                    <span className="font-medium">{d.client_name}</span>
-                    <span className="text-muted-foreground">
-                      {d.plan_name ?? "—"}
-                    </span>
-                    <Badge variant="destructive" className="text-xs">
-                      Disenrolled
-                    </Badge>
+          <div>
+            {result.disenrolled.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No disenrollment candidates.
+              </p>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-red-600">
+                    Disenrollment Candidates ({result.disenrolled.length})
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (selectedDisenrollIds.size === result.disenrolled.length) {
+                          setSelectedDisenrollIds(new Set());
+                        } else {
+                          setSelectedDisenrollIds(new Set(result.disenrolled.map((d) => d.enrollment_id)));
+                        }
+                      }}
+                    >
+                      {selectedDisenrollIds.size === result.disenrolled.length
+                        ? "Deselect All"
+                        : "Select All"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      disabled={selectedDisenrollIds.size === 0 || confirmDisenrollments.isPending}
+                      onClick={() => {
+                        const ids = Array.from(selectedDisenrollIds);
+                        setDisenrollResult(null);
+                        confirmDisenrollments.mutate(ids, {
+                          onSuccess: (res) => {
+                            setDisenrollResult(res);
+                            setSelectedDisenrollIds(new Set());
+                            onDisenrolled(ids);
+                          },
+                          onError: (err) => {
+                            setDisenrollResult({ disenrolled: 0, errors: [String(err)] });
+                          },
+                        });
+                      }}
+                    >
+                      {confirmDisenrollments.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Confirm Disenrollments ({selectedDisenrollIds.size})
+                    </Button>
                   </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
+                </div>
+
+                {disenrollResult && (
+                  <div
+                    className={`mb-2 rounded-md border p-3 text-sm ${
+                      disenrollResult.errors.length > 0
+                        ? "border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
+                        : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950"
+                    }`}
+                  >
+                    <p className="font-medium">
+                      Disenrolled {disenrollResult.disenrolled} member{disenrollResult.disenrolled !== 1 ? "s" : ""} successfully.
+                    </p>
+                    {disenrollResult.errors.map((err, i) => (
+                      <p key={i} className="mt-1 text-destructive">{err}</p>
+                    ))}
+                  </div>
+                )}
+
+                <ScrollArea className="h-48">
+                  <div className="space-y-1">
+                    {result.disenrolled.map((d) => (
+                      <div
+                        key={d.enrollment_id}
+                        className="flex items-center gap-3 rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950"
+                      >
+                        <Checkbox
+                          checked={selectedDisenrollIds.has(d.enrollment_id)}
+                          onCheckedChange={() => {
+                            setSelectedDisenrollIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(d.enrollment_id)) next.delete(d.enrollment_id);
+                              else next.add(d.enrollment_id);
+                              return next;
+                            });
+                          }}
+                        />
+                        <span className="min-w-[140px] font-medium">{d.client_name}</span>
+                        <span className="flex-1 text-muted-foreground">
+                          {d.plan_name ?? "—"}
+                        </span>
+                        <Badge variant="destructive" className="text-xs">
+                          Not in Portal
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </>
+            )}
+          </div>
         )}
 
         {/* New in portal list with import */}

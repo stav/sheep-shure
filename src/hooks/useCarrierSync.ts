@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tauriInvoke } from "@/lib/tauri";
-import type { SyncResult, SyncLogEntry, ImportPortalResult } from "@/types";
+import type { SyncResult, SyncLogEntry, ImportPortalResult, ConfirmDisenrollmentResult } from "@/types";
 
 export function useOpenCarrierLogin() {
   return useMutation({
@@ -57,6 +57,22 @@ export function useImportPortalMembers() {
       queryClient.invalidateQueries({ queryKey: ["carriers"] });
       queryClient.invalidateQueries({ queryKey: ["enrollments"] });
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+    },
+  });
+}
+
+export function useConfirmDisenrollments() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enrollmentIds: string[]) =>
+      tauriInvoke<ConfirmDisenrollmentResult>("confirm_disenrollments", {
+        enrollmentIds,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enrollments"] });
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-logs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     },
   });

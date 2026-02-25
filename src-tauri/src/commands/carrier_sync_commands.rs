@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl
 
 use crate::carrier_sync;
 use crate::db::DbState;
-use crate::models::{ImportPortalResult, PortalMember, SyncLogEntry, SyncResult};
+use crate::models::{ConfirmDisenrollmentResult, ImportPortalResult, PortalMember, SyncLogEntry, SyncResult};
 
 /// Open a webview window to the carrier's login portal.
 /// Sets up a navigation interceptor to catch sync results from injected JS.
@@ -117,6 +117,19 @@ pub fn import_portal_members(
     state
         .with_conn(|conn| {
             crate::services::carrier_sync_service::import_portal_members(conn, &carrier_id, &members)
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Confirm disenrollment for selected enrollment IDs.
+#[tauri::command]
+pub fn confirm_disenrollments(
+    enrollment_ids: Vec<String>,
+    state: State<'_, DbState>,
+) -> Result<ConfirmDisenrollmentResult, String> {
+    state
+        .with_conn(|conn| {
+            crate::services::carrier_sync_service::confirm_disenrollments(conn, &enrollment_ids)
         })
         .map_err(|e| e.to_string())
 }

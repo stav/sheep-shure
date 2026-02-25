@@ -66,6 +66,13 @@ pub struct ImportPortalResult {
     pub errors: Vec<String>,
 }
 
+/// Result of confirming disenrollment candidates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfirmDisenrollmentResult {
+    pub disenrolled: usize,
+    pub errors: Vec<String>,
+}
+
 /// Summary log entry for a completed sync operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncLogEntry {
