@@ -142,8 +142,8 @@ pub fn get_clients(
 pub fn get_client(conn: &Connection, id: &str) -> Result<Client, AppError> {
     let sql = "SELECT id, first_name, last_name, middle_name, dob, gender, phone, phone2, email,
                address_line1, address_line2, city, state, zip, county, mbi, part_a_date, part_b_date,
-               orec, esrd_status, is_dual_eligible, dual_status_code, lis_level, medicaid_id,
-               lead_source, original_effective_date, member_record_locator, is_active, tags, notes,
+               orec, is_dual_eligible, dual_status_code, lis_level, medicaid_id,
+               lead_source, member_record_locator, is_active, tags, notes,
                created_at, updated_at
                FROM clients WHERE id = ?1";
 
@@ -168,19 +168,17 @@ pub fn get_client(conn: &Connection, id: &str) -> Result<Client, AppError> {
             part_a_date: row.get(16)?,
             part_b_date: row.get(17)?,
             orec: row.get(18)?,
-            esrd_status: row.get(19)?,
-            is_dual_eligible: row.get(20)?,
-            dual_status_code: row.get(21)?,
-            lis_level: row.get(22)?,
-            medicaid_id: row.get(23)?,
-            lead_source: row.get(24)?,
-            original_effective_date: row.get(25)?,
-            member_record_locator: row.get(26)?,
-            is_active: row.get(27)?,
-            tags: row.get(28)?,
-            notes: row.get(29)?,
-            created_at: row.get(30)?,
-            updated_at: row.get(31)?,
+            is_dual_eligible: row.get(19)?,
+            dual_status_code: row.get(20)?,
+            lis_level: row.get(21)?,
+            medicaid_id: row.get(22)?,
+            lead_source: row.get(23)?,
+            member_record_locator: row.get(24)?,
+            is_active: row.get(25)?,
+            tags: row.get(26)?,
+            notes: row.get(27)?,
+            created_at: row.get(28)?,
+            updated_at: row.get(29)?,
         })
     })
     .map_err(|e| match e {
@@ -193,18 +191,18 @@ pub fn get_client(conn: &Connection, id: &str) -> Result<Client, AppError> {
 pub fn create_client(conn: &Connection, id: &str, input: &CreateClientInput) -> Result<(), AppError> {
     let sql = "INSERT INTO clients (id, first_name, last_name, middle_name, dob, gender, phone, phone2, email,
                address_line1, address_line2, city, state, zip, county, mbi, part_a_date, part_b_date,
-               orec, esrd_status, is_dual_eligible, dual_status_code, lis_level, medicaid_id,
-               lead_source, original_effective_date, member_record_locator, tags, notes)
+               orec, is_dual_eligible, dual_status_code, lis_level, medicaid_id,
+               lead_source, member_record_locator, tags, notes)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-               ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)";
+               ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)";
 
     conn.execute(sql, params![
         id, input.first_name, input.last_name, input.middle_name, input.dob, input.gender,
         input.phone, input.phone2, input.email, input.address_line1, input.address_line2,
         input.city, input.state, input.zip, input.county, input.mbi, input.part_a_date,
-        input.part_b_date, input.orec, input.esrd_status, input.is_dual_eligible,
+        input.part_b_date, input.orec, input.is_dual_eligible,
         input.dual_status_code, input.lis_level, input.medicaid_id, input.lead_source,
-        input.original_effective_date, input.member_record_locator, input.tags, input.notes
+        input.member_record_locator, input.tags, input.notes
     ])?;
 
     Ok(())
@@ -245,13 +243,11 @@ pub fn update_client(conn: &Connection, id: &str, input: &UpdateClientInput) -> 
     maybe_set!(part_a_date, "part_a_date");
     maybe_set!(part_b_date, "part_b_date");
     maybe_set!(orec, "orec");
-    maybe_set!(esrd_status, "esrd_status");
     maybe_set!(is_dual_eligible, "is_dual_eligible");
     maybe_set!(dual_status_code, "dual_status_code");
     maybe_set!(lis_level, "lis_level");
     maybe_set!(medicaid_id, "medicaid_id");
     maybe_set!(lead_source, "lead_source");
-    maybe_set!(original_effective_date, "original_effective_date");
     maybe_set!(member_record_locator, "member_record_locator");
     maybe_set!(is_active, "is_active");
     maybe_set!(tags, "tags");

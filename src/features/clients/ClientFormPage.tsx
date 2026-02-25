@@ -36,13 +36,11 @@ const clientSchema = z.object({
   part_a_date: z.string().optional(),
   part_b_date: z.string().optional(),
   orec: z.string().optional(),
-  esrd_status: z.boolean().optional(),
   is_dual_eligible: z.boolean().optional(),
   dual_status_code: z.string().optional(),
   lis_level: z.string().optional(),
   medicaid_id: z.string().optional(),
   lead_source: z.string().optional(),
-  original_effective_date: z.string().optional(),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
@@ -90,22 +88,23 @@ export function ClientFormPage() {
         part_a_date: client.part_a_date ?? "",
         part_b_date: client.part_b_date ?? "",
         orec: client.orec ?? "",
-        esrd_status: client.esrd_status ?? false,
-        is_dual_eligible: client.is_dual_eligible ?? false,
+        is_dual_eligible: !!client.is_dual_eligible,
         dual_status_code: client.dual_status_code ?? "",
         lis_level: client.lis_level ?? "",
         medicaid_id: client.medicaid_id ?? "",
         lead_source: client.lead_source ?? "",
-        original_effective_date: client.original_effective_date ?? "",
       });
     }
   }, [client, reset]);
 
   const onSubmit = async (data: ClientFormData) => {
     try {
-      // Clean empty strings to null
+      // Clean empty strings to null, convert booleans to integers for Rust
       const cleaned = Object.fromEntries(
-        Object.entries(data).map(([k, v]) => [k, v === "" ? null : v])
+        Object.entries(data).map(([k, v]) => [
+          k,
+          v === "" ? null : typeof v === "boolean" ? (v ? 1 : 0) : v,
+        ])
       );
 
       if (isEditing && id) {
@@ -137,11 +136,16 @@ export function ClientFormPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-2xl font-bold">
-          {isEditing ? "Edit Client" : "New Client"}
+          {isEditing && client
+            ? `${client.first_name} ${client.last_name}`
+            : "New Client"}
         </h1>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, (errs) => {
+        const first = Object.entries(errs)[0];
+        if (first) toast.error(`${first[0]}: ${first[1]?.message}`);
+      })} className="space-y-6">
         {/* Personal Information */}
         <Card>
           <CardHeader>
@@ -268,7 +272,17 @@ export function ClientFormPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="orec">OREC</Label>
-              <Input id="orec" {...register("orec")} />
+              <select
+                id="orec"
+                {...register("orec")}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Select...</option>
+                <option value="0">0 — Age</option>
+                <option value="1">1 — Disability</option>
+                <option value="2">2 — ESRD</option>
+                <option value="3">3 — Disability + ESRD</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="part_a_date">Part A Date</Label>
@@ -277,10 +291,6 @@ export function ClientFormPage() {
             <div className="space-y-2">
               <Label htmlFor="part_b_date">Part B Date</Label>
               <Input id="part_b_date" type="date" {...register("part_b_date")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="original_effective_date">Original Effective Date</Label>
-              <Input id="original_effective_date" type="date" {...register("original_effective_date")} />
             </div>
           </CardContent>
         </Card>

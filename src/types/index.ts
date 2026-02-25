@@ -18,13 +18,11 @@ export interface Client {
   part_a_date?: string;
   part_b_date?: string;
   orec?: string;
-  esrd_status: boolean;
   is_dual_eligible: boolean;
   dual_status_code?: string;
   lis_level?: string;
   medicaid_id?: string;
   lead_source?: string;
-  original_effective_date?: string;
   member_record_locator?: string;
   is_active: boolean;
   tags?: string[];

@@ -4,8 +4,15 @@ import { useEnrollments } from "@/hooks/useEnrollments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard } from "lucide-react";
+import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info } from "lucide-react";
 import { ClientEngagementSection } from "@/features/engagement";
+
+const OREC_LABELS: Record<string, string> = {
+  "0": "Age",
+  "1": "Disability",
+  "2": "ESRD",
+  "3": "Disability + ESRD",
+};
 
 function Field({ label, value }: { label: string; value?: string | number | boolean | null }) {
   let display: string;
@@ -118,8 +125,21 @@ export function ClientDetailPage() {
             <Field label="MBI" value={client.mbi} />
             <Field label="Part A Date" value={client.part_a_date} />
             <Field label="Part B Date" value={client.part_b_date} />
-            <Field label="OREC" value={client.orec} />
-            <Field label="Original Effective Date" value={client.original_effective_date} />
+            <div>
+              <dt className="text-sm text-muted-foreground flex items-center gap-1">
+                OREC
+                <span
+                  className="inline-flex cursor-help"
+                  title="Original Reason for Entitlement Code — why the beneficiary originally qualified for Medicare"
+                >
+                  <Info className="h-3.5 w-3.5 text-muted-foreground/60" />
+                </span>
+              </dt>
+              <dd className="text-sm font-medium">
+                {client.orec ? (OREC_LABELS[client.orec] ?? client.orec) : "\u2014"}
+              </dd>
+            </div>
+
           </CardContent>
         </Card>
       </div>
@@ -134,7 +154,6 @@ export function ClientDetailPage() {
             <Field label="Date of Birth" value={client.dob} />
             <Field label="Gender" value={client.gender} />
             <Field label="Lead Source" value={client.lead_source} />
-            <Field label="ESRD Status" value={client.esrd_status} />
           </dl>
         </CardContent>
       </Card>
