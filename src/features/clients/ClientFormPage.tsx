@@ -99,11 +99,21 @@ export function ClientFormPage() {
 
   const onSubmit = async (data: ClientFormData) => {
     try {
-      // Clean empty strings to null, convert booleans to integers for Rust
+      // Clean empty strings to null, convert booleans to integers for Rust,
+      // strip phone numbers to digits only
+      const phoneFields = new Set(["phone", "phone2"]);
       const cleaned = Object.fromEntries(
         Object.entries(data).map(([k, v]) => [
           k,
-          v === "" ? null : typeof v === "boolean" ? (v ? 1 : 0) : v,
+          v === ""
+            ? null
+            : typeof v === "boolean"
+              ? (v ? 1 : 0)
+              : phoneFields.has(k) && typeof v === "string"
+                ? v.replace(/\D/g, "") || null
+                : k === "mbi" && typeof v === "string"
+                  ? v.replace(/[\s-]/g, "").toUpperCase() || null
+                  : v,
         ])
       );
 

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info } from "lucide-react";
 import { ClientEngagementSection } from "@/features/engagement";
-import { formatTimestamp } from "@/lib/utils";
+import { formatMbi, formatPhone, formatTimestamp } from "@/lib/utils";
 
 const OREC_LABELS: Record<string, string> = {
   "0": "Age",
@@ -93,8 +93,8 @@ export function ClientDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Field label="Phone" value={client.phone} />
-            <Field label="Phone 2" value={client.phone2} />
+            <Field label="Phone" value={formatPhone(client.phone)} />
+            <Field label="Phone 2" value={formatPhone(client.phone2)} />
             <Field label="Email" value={client.email} />
           </CardContent>
         </Card>
@@ -123,7 +123,7 @@ export function ClientDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Field label="MBI" value={client.mbi} />
+            <Field label="MBI" value={formatMbi(client.mbi)} />
             <Field label="Part A Date" value={client.part_a_date} />
             <Field label="Part B Date" value={client.part_b_date} />
             <div>
