@@ -12,9 +12,20 @@ pub async fn open_carrier_login(app: AppHandle, carrier_id: String) -> Result<St
         .ok_or_else(|| format!("No portal integration for carrier: {}", carrier_id))?;
 
     let url = portal.login_url().to_string();
+    let login_url: tauri::Url = url.parse().unwrap();
+    let login_host = login_url.host_str().unwrap_or("").to_string();
 
-    // Close existing carrier-login window if open
+    // Reuse existing webview if it's already on this carrier's domain
     if let Some(existing) = app.get_webview_window("carrier-login") {
+        let current_host = existing.url().ok()
+            .and_then(|u| u.host_str().map(|h| h.to_string()))
+            .unwrap_or_default();
+
+        if current_host == login_host {
+            let _ = existing.set_focus();
+            return Ok(url);
+        }
+
         existing.close().map_err(|e| e.to_string())?;
     }
 
