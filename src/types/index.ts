@@ -18,13 +18,13 @@ export interface Client {
   part_a_date?: string;
   part_b_date?: string;
   orec?: string;
-  is_dual_eligible: boolean;
+  is_dual_eligible: number;
   dual_status_code?: string;
   lis_level?: string;
   medicaid_id?: string;
   lead_source?: string;
   member_record_locator?: string;
-  is_active: boolean;
+  is_active: number;
   tags?: string[];
   created_at: string;
   updated_at: string;
@@ -37,6 +37,7 @@ export interface ClientListItem {
   dob?: string;
   carrier_name?: string;
   plan_name?: string;
+  is_active?: number;
 }
 
 export interface ClientFilters {

@@ -1,12 +1,14 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useClient } from "@/hooks/useClients";
+import { useClient, useUpdateClient } from "@/hooks/useClients";
 import { useEnrollments } from "@/hooks/useEnrollments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info } from "lucide-react";
+import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info, UserX, UserCheck } from "lucide-react";
+import { toast } from "sonner";
 import { ClientEngagementSection } from "@/features/engagement";
 import { formatMbi, formatPhone, formatTimestamp } from "@/lib/utils";
+import { tauriInvoke } from "@/lib/tauri";
 
 const OREC_LABELS: Record<string, string> = {
   "0": "Age",
@@ -34,6 +36,7 @@ export function ClientDetailPage() {
   const navigate = useNavigate();
   const { data: client, isLoading } = useClient(id);
   const { data: enrollments } = useEnrollments(id);
+  const updateClient = useUpdateClient();
 
   if (isLoading) {
     return (
@@ -96,6 +99,38 @@ export function ClientDetailPage() {
             <Field label="Phone" value={formatPhone(client.phone)} />
             <Field label="Phone 2" value={formatPhone(client.phone2)} />
             <Field label="Email" value={client.email} />
+            <Separator />
+            <Button
+              variant="outline"
+              size="sm"
+              className={client.is_active
+                ? "w-full border-red-300 text-red-600 hover:bg-red-600 hover:text-white hover:border-red-600"
+                : "w-full border-green-300 text-green-600 hover:bg-green-600 hover:text-white hover:border-green-600"
+              }
+              onClick={async () => {
+                const newActive = client.is_active ? 0 : 1;
+                updateClient.mutate(
+                  { id: client.id, input: { is_active: newActive } },
+                  {
+                    onSuccess: async () => {
+                      toast.success(newActive ? "Client reactivated" : "Client deactivated");
+                      await tauriInvoke("create_system_event", {
+                        clientId: client.id,
+                        eventType: newActive ? "CLIENT_REACTIVATED" : "CLIENT_DEACTIVATED",
+                        eventData: null,
+                      }).catch(() => {});
+                    },
+                    onError: (err) => toast.error(String(err)),
+                  }
+                );
+              }}
+            >
+              {client.is_active ? (
+                <><UserX className="mr-2 h-4 w-4" /> Deactivate Client</>
+              ) : (
+                <><UserCheck className="mr-2 h-4 w-4" /> Reactivate Client</>
+              )}
+            </Button>
           </CardContent>
         </Card>
 

@@ -38,6 +38,7 @@ export function ClientsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const [page, setPage] = useState(initialPage);
   const [perPageOption, setPerPageOption] = useState(initialPerPage);
+  const [showInactive, setShowInactive] = useState(false);
 
   // Sync state changes to URL (replace, not push)
   useEffect(() => {
@@ -62,8 +63,8 @@ export function ClientsPage() {
 
   const filters: ClientFilters = useMemo(() => ({
     search: debouncedSearch || undefined,
-    is_active: true,
-  }), [debouncedSearch]);
+    is_active: showInactive ? undefined : true,
+  }), [debouncedSearch, showInactive]);
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const perPage = perPageOption === "all" ? 9999 : Number(perPageOption);
@@ -138,6 +139,15 @@ export function ClientsPage() {
             </button>
           )}
         </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showInactive}
+            onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
+            className="rounded border-input"
+          />
+          Show inactive
+        </label>
         <Button onClick={() => navigate("/clients/new")}>
           <Plus className="mr-2 h-4 w-4" />
           New Client
@@ -186,7 +196,7 @@ export function ClientsPage() {
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="border-b cursor-pointer hover:bg-muted/50 transition-colors"
+                  className={`border-b cursor-pointer hover:bg-muted/50 transition-colors ${row.original.is_active === 0 ? "opacity-50 border-l-2 border-l-red-400" : ""}`}
                   onClick={() => navigate(`/clients/${row.original.id}`)}
                 >
                   {row.getVisibleCells().map((cell) => (

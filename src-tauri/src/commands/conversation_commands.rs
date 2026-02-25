@@ -106,3 +106,22 @@ pub fn get_pending_follow_ups(
         .with_conn(|conn| conversation_service::get_pending_follow_ups(conn, client_id.as_deref()))
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn create_system_event(
+    client_id: String,
+    event_type: String,
+    event_data: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    state
+        .with_conn(|conn| {
+            conversation_service::create_system_event(
+                conn,
+                &client_id,
+                &event_type,
+                event_data.as_deref(),
+            )
+        })
+        .map_err(|e| e.to_string())
+}

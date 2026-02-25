@@ -63,6 +63,7 @@ pub fn run() {
             commands::update_conversation_entry,
             commands::get_client_timeline,
             commands::get_pending_follow_ups,
+            commands::create_system_event,
             commands::get_carriers,
             commands::parse_import_file,
             commands::validate_import,

@@ -103,6 +103,7 @@ pub struct ClientListItem {
     pub dob: Option<String>,
     pub carrier_name: Option<String>,
     pub plan_name: Option<String>,
+    pub is_active: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

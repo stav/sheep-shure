@@ -46,10 +46,8 @@ pub fn get_clients(
         let idx = param_values.len() + 1;
         conditions.push(format!("c.is_active = ?{}", idx));
         param_values.push(Box::new(if is_active { 1i32 } else { 0i32 }));
-    } else {
-        // Default: only active clients
-        conditions.push("c.is_active = 1".to_string());
     }
+    // When is_active is None, no filter is applied — returns all clients
 
     // Carrier filter: join through enrollments
     if let Some(ref carrier_id) = filters.carrier_id {
@@ -96,7 +94,7 @@ pub fn get_clients(
     let limit_idx = param_values.len() + 1;
     let offset_idx = param_values.len() + 2;
     let select_sql = format!(
-        "SELECT c.id, c.first_name, c.last_name, c.dob, cr.name, e.plan_name
+        "SELECT c.id, c.first_name, c.last_name, c.dob, cr.name, e.plan_name, c.is_active
          FROM clients c
          LEFT JOIN enrollments e ON e.client_id = c.id
            AND e.is_active = 1
@@ -126,6 +124,7 @@ pub fn get_clients(
             dob: row.get(3)?,
             carrier_name: row.get(4)?,
             plan_name: row.get(5)?,
+            is_active: row.get(6)?,
         })
     })?
     .collect::<Result<Vec<_>, _>>()?;
