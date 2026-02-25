@@ -44,6 +44,13 @@ pub fn delete_client(id: String, state: State<'_, DbState>) -> Result<(), String
 }
 
 #[tauri::command]
+pub fn hard_delete_client(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    state.with_conn(|conn| {
+        client_service::hard_delete_client(conn, &id)
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn merge_clients(keeper_id: String, source_id: String, state: State<'_, DbState>) -> Result<Client, String> {
     state.with_conn(|conn| {
         client_service::merge_clients(conn, &keeper_id, &source_id)

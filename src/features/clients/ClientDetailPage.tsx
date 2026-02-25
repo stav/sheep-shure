@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useClient, useUpdateClient } from "@/hooks/useClients";
+import { useClient, useUpdateClient, useHardDeleteClient } from "@/hooks/useClients";
 import { useEnrollments } from "@/hooks/useEnrollments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info, UserX, UserCheck } from "lucide-react";
+import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info, UserX, UserCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ClientEngagementSection } from "@/features/engagement";
 import { formatMbi, formatPhone, formatTimestamp } from "@/lib/utils";
@@ -37,6 +38,8 @@ export function ClientDetailPage() {
   const { data: client, isLoading } = useClient(id);
   const { data: enrollments } = useEnrollments(id);
   const updateClient = useUpdateClient();
+  const hardDelete = useHardDeleteClient();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   if (isLoading) {
     return (
@@ -250,10 +253,48 @@ export function ClientDetailPage() {
       {/* Engagement */}
       <ClientEngagementSection clientId={client.id} />
 
-      {/* Metadata */}
-      <div className="text-xs text-muted-foreground">
-        <p>Created: {formatTimestamp(client.created_at)}</p>
-        <p>Updated: {formatTimestamp(client.updated_at)}</p>
+      {/* Metadata + Delete */}
+      <div className="flex items-end justify-between">
+        <div className="text-xs text-muted-foreground">
+          <p>Created: {formatTimestamp(client.created_at)}</p>
+          <p>Updated: {formatTimestamp(client.updated_at)}</p>
+        </div>
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={hardDelete.isPending}
+              onClick={() => {
+                hardDelete.mutate(client.id, {
+                  onSuccess: () => {
+                    toast.success("Client permanently deleted");
+                    navigate("/clients");
+                  },
+                  onError: (err) => toast.error(String(err)),
+                });
+              }}
+            >
+              {hardDelete.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirm Delete
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-red-600"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete Client
+          </Button>
+        )}
       </div>
     </div>
   );

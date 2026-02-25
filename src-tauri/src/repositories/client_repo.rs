@@ -277,3 +277,26 @@ pub fn delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+/// Hard-delete a client and all related records (enrollments, conversations, etc.)
+pub fn hard_delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
+    // Verify the client exists
+    let exists: bool = conn
+        .query_row("SELECT 1 FROM clients WHERE id = ?1", params![id], |_| Ok(()))
+        .is_ok();
+    if !exists {
+        return Err(AppError::NotFound(format!("Client {} not found", id)));
+    }
+
+    // Delete children in dependency order
+    conn.execute("DELETE FROM conversation_entries WHERE client_id = ?1", params![id])?;
+    conn.execute("DELETE FROM conversations WHERE client_id = ?1", params![id])?;
+    conn.execute("DELETE FROM enrollments WHERE client_id = ?1", params![id])?;
+    conn.execute("DELETE FROM client_providers WHERE client_id = ?1", params![id])?;
+    conn.execute("DELETE FROM clients WHERE id = ?1", params![id])?;
+
+    // Rebuild FTS index
+    conn.execute("INSERT INTO clients_fts(clients_fts) VALUES('rebuild')", [])?;
+
+    Ok(())
+}

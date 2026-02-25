@@ -55,6 +55,16 @@ export function useDeleteClient() {
   });
 }
 
+export function useHardDeleteClient() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => tauriInvoke("hard_delete_client", { id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
 export function useCarriers() {
   return useQuery({
     queryKey: ["carriers"],

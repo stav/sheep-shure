@@ -54,6 +54,10 @@ pub fn delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
     client_repo::delete_client(conn, id)
 }
 
+pub fn hard_delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
+    client_repo::hard_delete_client(conn, id)
+}
+
 /// Merge `source_id` into `keeper_id`: move all enrollments and conversations
 /// from source to keeper, then hard-delete the source client.
 pub fn merge_clients(conn: &Connection, keeper_id: &str, source_id: &str) -> Result<Client, AppError> {
