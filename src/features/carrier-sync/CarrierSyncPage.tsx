@@ -328,6 +328,19 @@ export function CarrierSyncPage() {
   );
 }
 
+/** Determine if a portal member is active or inactive based on policy_status / status. */
+function isPortalMemberActive(m: PortalMember): boolean {
+  // Prefer policy_status (granular: "Active Policy", "Future Active Policy", etc.)
+  const ps = (m.policy_status || "").toLowerCase();
+  if (ps) {
+    if (ps.includes("inactive")) return false;
+    if (ps.includes("active")) return true;
+  }
+  // Fall back to status field ("ENROLLED" / "NOT_ENROLLED")
+  const s = (m.status || "").toLowerCase();
+  return s === "enrolled";
+}
+
 type StatView = "portal" | "active" | "inactive" | "matched" | "disenrolled" | null;
 
 function SyncResultsPanel({
@@ -348,14 +361,8 @@ function SyncResultsPanel({
     ...result.matched_members.map((m) => m.portal_member),
     ...result.new_in_portal,
   ];
-  const isActiveFn = (s?: string) => {
-    if (!s) return false;
-    const l = s.toLowerCase();
-    return l.includes("active") && !l.includes("inactive");
-  };
-  const isInactiveFn = (s?: string) => !!s && s.toLowerCase().includes("inactive");
-  const activeMembers = allPortalMembers.filter((m) => isActiveFn(m.status));
-  const inactiveMembers = allPortalMembers.filter((m) => isInactiveFn(m.status));
+  const activeMembers = allPortalMembers.filter((m) => isPortalMemberActive(m));
+  const inactiveMembers = allPortalMembers.filter((m) => !isPortalMemberActive(m));
 
   const expectedActive = carrier?.expected_active ?? 0;
   const hasExpected = expectedActive > 0;
@@ -456,8 +463,8 @@ function SyncResultsPanel({
         {[m.city, m.state].filter(Boolean).join(", ") || "—"}
       </span>
       <span className="text-muted-foreground">{m.plan_name ?? "—"}</span>
-      <Badge variant="secondary" className="text-xs">
-        {m.status ?? "—"}
+      <Badge variant={isPortalMemberActive(m) ? "secondary" : "destructive"} className="text-xs">
+        {isPortalMemberActive(m) ? "Active" : "Inactive"}
       </Badge>
     </div>
   );
@@ -682,8 +689,8 @@ function SyncResultsPanel({
                     <span className="flex-1 text-muted-foreground">
                       {m.plan_name ?? "—"}
                     </span>
-                    <Badge variant="secondary" className="text-xs">
-                      {m.status ?? "New"}
+                    <Badge variant={isPortalMemberActive(m) ? "secondary" : "destructive"} className="text-xs">
+                      {isPortalMemberActive(m) ? "Active" : "Inactive"}
                     </Badge>
                   </div>
                 ))}
