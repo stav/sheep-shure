@@ -196,7 +196,7 @@ export function ClientsPage() {
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className={`border-b cursor-pointer hover:bg-muted/50 transition-colors ${row.original.is_active === 0 ? "opacity-50 border-l-2 border-l-red-400" : ""}`}
+                  className={`border-b cursor-pointer hover:bg-muted/50 transition-colors ${!row.original.is_active ? "opacity-50 border-l-2 border-l-red-400" : ""}`}
                   onClick={() => navigate(`/clients/${row.original.id}`)}
                 >
                   {row.getVisibleCells().map((cell) => (

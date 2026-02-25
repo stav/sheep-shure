@@ -88,7 +88,7 @@ export function ClientFormPage() {
         part_a_date: client.part_a_date ?? "",
         part_b_date: client.part_b_date ?? "",
         orec: client.orec ?? "",
-        is_dual_eligible: !!client.is_dual_eligible,
+        is_dual_eligible: client.is_dual_eligible ?? false,
         dual_status_code: client.dual_status_code ?? "",
         lis_level: client.lis_level ?? "",
         medicaid_id: client.medicaid_id ?? "",
@@ -99,21 +99,18 @@ export function ClientFormPage() {
 
   const onSubmit = async (data: ClientFormData) => {
     try {
-      // Clean empty strings to null, convert booleans to integers for Rust,
-      // strip phone numbers to digits only
+      // Clean empty strings to null, strip phone numbers to digits only
       const phoneFields = new Set(["phone", "phone2"]);
       const cleaned = Object.fromEntries(
         Object.entries(data).map(([k, v]) => [
           k,
           v === ""
             ? null
-            : typeof v === "boolean"
-              ? (v ? 1 : 0)
-              : phoneFields.has(k) && typeof v === "string"
-                ? v.replace(/\D/g, "") || null
-                : k === "mbi" && typeof v === "string"
-                  ? v.replace(/[\s-]/g, "").toUpperCase() || null
-                  : v,
+            : phoneFields.has(k) && typeof v === "string"
+              ? v.replace(/\D/g, "") || null
+              : k === "mbi" && typeof v === "string"
+                ? v.replace(/[\s-]/g, "").toUpperCase() || null
+                : v,
         ])
       );
 

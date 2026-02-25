@@ -64,7 +64,7 @@ export function ConversationList({
                   }`}
                 >
                   <div className="flex items-center gap-1">
-                    {!!conv.is_pinned && (
+                    {conv.is_pinned && (
                       <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />
                     )}
                     <span className="truncate text-sm font-medium">

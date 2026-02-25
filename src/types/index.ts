@@ -18,13 +18,13 @@ export interface Client {
   part_a_date?: string;
   part_b_date?: string;
   orec?: string;
-  is_dual_eligible: number;
+  is_dual_eligible: boolean;
   dual_status_code?: string;
   lis_level?: string;
   medicaid_id?: string;
   lead_source?: string;
   member_record_locator?: string;
-  is_active: number;
+  is_active: boolean;
   tags?: string[];
   created_at: string;
   updated_at: string;
@@ -37,7 +37,7 @@ export interface ClientListItem {
   dob?: string;
   carrier_name?: string;
   plan_name?: string;
-  is_active?: number;
+  is_active?: boolean;
 }
 
 export interface ClientFilters {
@@ -131,8 +131,8 @@ export interface Conversation {
   client_id: string;
   title: string;
   status: ConversationStatus;
-  is_pinned: number;
-  is_active: number;
+  is_pinned: boolean;
+  is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -142,7 +142,7 @@ export interface ConversationListItem {
   client_id: string;
   title: string;
   status: ConversationStatus;
-  is_pinned: number;
+  is_pinned: boolean;
   entry_count: number;
   last_entry_at?: string;
   created_at?: string;
@@ -168,7 +168,7 @@ export interface ConversationEntry {
   email_from?: string;
   system_event_type?: string;
   system_event_data?: string;
-  is_active: number;
+  is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -205,8 +205,8 @@ export interface CreateConversationInput {
 export interface UpdateConversationInput {
   title?: string;
   status?: ConversationStatus;
-  is_pinned?: number;
-  is_active?: number;
+  is_pinned?: boolean;
+  is_active?: boolean;
 }
 
 export interface CreateConversationEntryInput {
@@ -242,7 +242,7 @@ export interface UpdateConversationEntryInput {
   meeting_type?: MeetingType;
   email_to?: string;
   email_from?: string;
-  is_active?: number;
+  is_active?: boolean;
 }
 
 // ── Carrier Sync ──────────────────────────────────────────────────────────────
@@ -283,9 +283,9 @@ export interface ClientProvider {
   npi?: string;
   specialty?: string;
   phone?: string;
-  is_pcp?: number;
+  is_pcp?: boolean;
   source?: string;
-  is_active?: number;
+  is_active?: boolean;
   created_at?: string;
   updated_at?: string;
 }

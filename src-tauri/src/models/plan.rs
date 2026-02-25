@@ -13,7 +13,7 @@ pub struct Plan {
     pub state: Option<String>,
     pub county_fips: Option<String>,
     pub premium: Option<f64>,
-    pub is_active: Option<i32>,
+    pub is_active: Option<bool>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }

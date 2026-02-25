@@ -20,8 +20,8 @@ const OREC_LABELS: Record<string, string> = {
 
 function Field({ label, value }: { label: string; value?: string | number | boolean | null }) {
   let display: string;
-  if (value === true || value === 1) display = "Yes";
-  else if (value === false || value === 0) display = "No";
+  if (value === true) display = "Yes";
+  else if (value === false) display = "No";
   else if (value != null && value !== "") display = String(value);
   else display = "\u2014";
   return (
@@ -71,7 +71,7 @@ export function ClientDetailPage() {
             </h1>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span className="font-mono text-xs">{client.id}</span>
-              {!!client.is_dual_eligible && (
+              {client.is_dual_eligible && (
                 <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
                   Dual Eligible
                 </span>
@@ -111,7 +111,7 @@ export function ClientDetailPage() {
                 : "w-full border-green-300 text-green-600 hover:bg-green-600 hover:text-white hover:border-green-600"
               }
               onClick={async () => {
-                const newActive = client.is_active ? 0 : 1;
+                const newActive = !client.is_active;
                 updateClient.mutate(
                   { id: client.id, input: { is_active: newActive } },
                   {
@@ -198,7 +198,7 @@ export function ClientDetailPage() {
       </Card>
 
       {/* Dual/LIS */}
-      {!!client.is_dual_eligible && (
+      {client.is_dual_eligible && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Dual Eligible / LIS</CardTitle>

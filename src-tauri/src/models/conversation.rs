@@ -8,8 +8,8 @@ pub struct Conversation {
     pub client_id: String,
     pub title: String,
     pub status: String,
-    pub is_pinned: i32,
-    pub is_active: i32,
+    pub is_pinned: bool,
+    pub is_active: bool,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -24,8 +24,8 @@ pub struct CreateConversationInput {
 pub struct UpdateConversationInput {
     pub title: Option<String>,
     pub status: Option<String>,
-    pub is_pinned: Option<i32>,
-    pub is_active: Option<i32>,
+    pub is_pinned: Option<bool>,
+    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +34,7 @@ pub struct ConversationListItem {
     pub client_id: String,
     pub title: String,
     pub status: String,
-    pub is_pinned: i32,
+    pub is_pinned: bool,
     pub entry_count: i64,
     pub last_entry_at: Option<String>,
     pub created_at: Option<String>,
@@ -63,7 +63,7 @@ pub struct ConversationEntry {
     pub email_from: Option<String>,
     pub system_event_type: Option<String>,
     pub system_event_data: Option<String>,
-    pub is_active: i32,
+    pub is_active: bool,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -103,7 +103,7 @@ pub struct UpdateConversationEntryInput {
     pub meeting_type: Option<String>,
     pub email_to: Option<String>,
     pub email_from: Option<String>,
-    pub is_active: Option<i32>,
+    pub is_active: Option<bool>,
 }
 
 // ── Timeline Entry (cross-thread view) ───────────────────────────────────────

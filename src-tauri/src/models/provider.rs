@@ -9,9 +9,9 @@ pub struct ClientProvider {
     pub npi: Option<String>,
     pub specialty: Option<String>,
     pub phone: Option<String>,
-    pub is_pcp: Option<i32>,
+    pub is_pcp: Option<bool>,
     pub source: Option<String>,
-    pub is_active: Option<i32>,
+    pub is_active: Option<bool>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -24,6 +24,6 @@ pub struct CreateProviderInput {
     pub npi: Option<String>,
     pub specialty: Option<String>,
     pub phone: Option<String>,
-    pub is_pcp: Option<i32>,
+    pub is_pcp: Option<bool>,
     pub source: Option<String>,
 }

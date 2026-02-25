@@ -39,13 +39,13 @@ pub fn get_clients(
     if let Some(is_dual) = filters.is_dual_eligible {
         let idx = param_values.len() + 1;
         conditions.push(format!("c.is_dual_eligible = ?{}", idx));
-        param_values.push(Box::new(if is_dual { 1i32 } else { 0i32 }));
+        param_values.push(Box::new(is_dual));
     }
 
     if let Some(is_active) = filters.is_active {
         let idx = param_values.len() + 1;
         conditions.push(format!("c.is_active = ?{}", idx));
-        param_values.push(Box::new(if is_active { 1i32 } else { 0i32 }));
+        param_values.push(Box::new(is_active));
     }
     // When is_active is None, no filter is applied — returns all clients
 

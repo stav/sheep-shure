@@ -5,7 +5,7 @@ pub struct Carrier {
     pub id: String,
     pub name: String,
     pub short_name: Option<String>,
-    pub is_active: Option<i32>,
+    pub is_active: Option<bool>,
     pub expected_active: Option<i32>,
 }
 
@@ -14,7 +14,7 @@ pub struct CarrierWithCounts {
     pub id: String,
     pub name: String,
     pub short_name: Option<String>,
-    pub is_active: Option<i32>,
+    pub is_active: Option<bool>,
     pub expected_active: Option<i32>,
     pub enrollment_count: i64,
 }

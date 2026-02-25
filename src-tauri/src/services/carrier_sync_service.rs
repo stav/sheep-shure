@@ -466,7 +466,7 @@ pub fn import_portal_members(
                 npi: None,
                 specialty: None,
                 phone: None,
-                is_pcp: Some(1),
+                is_pcp: Some(true),
                 source: Some("carrier_sync".to_string()),
             };
             let _ = provider_service::create_provider(conn, &provider_input);

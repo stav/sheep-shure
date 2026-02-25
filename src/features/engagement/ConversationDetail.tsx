@@ -49,12 +49,12 @@ export function ConversationDetail({
 
   if (!conversation) return null;
 
-  const isPinned = !!conversation.is_pinned;
+  const isPinned = conversation.is_pinned;
 
   const togglePin = () => {
     updateConversation.mutate({
       id: conversationId,
-      input: { is_pinned: isPinned ? 0 : 1 },
+      input: { is_pinned: !isPinned },
     });
   };
 
@@ -67,7 +67,7 @@ export function ConversationDetail({
 
   const executeDeleteThread = () => {
     updateConversation.mutate(
-      { id: conversationId, input: { is_active: 0 } },
+      { id: conversationId, input: { is_active: false } },
       { onSuccess: () => onDeleted?.() }
     );
     setConfirmDeleteThread(false);
@@ -75,7 +75,7 @@ export function ConversationDetail({
 
   const executeDeleteEntry = () => {
     if (!confirmDeleteEntryId) return;
-    updateEntry.mutate({ id: confirmDeleteEntryId, input: { is_active: 0 } });
+    updateEntry.mutate({ id: confirmDeleteEntryId, input: { is_active: false } });
     setConfirmDeleteEntryId(null);
   };
 
