@@ -10,12 +10,16 @@ A local-first, HIPAA-compliant desktop application for Medicare insurance agents
 
 - **Client CRM** — Full client records with Medicare-specific fields (MBI, Part A/B dates, dual eligibility, LIS level)
 - **Enrollment tracking** — Track plan enrollments across carriers with status lifecycle management
-- **Carrier file import** — Import CSV/XLSX files with auto-mapping columns to client fields, validation, and insert/update logic
+- **Carrier portal sync** — Verify your book of business against carrier agent portals (Devoted, CareSource, Medical Mutual, UHC, Humana) with automatic disenrollment detection
+- **Client engagement** — Threaded conversation tracking with timeline, follow-up scheduling, and system event logging
+- **Carrier file import** — Import CSV/XLSX files with auto-mapping, validation, and insert/update logic; specialized importers for call logs, integrity reports, SIREM files, and Leadsmaster enrichment
+- **Duplicate detection** — Scan for duplicate clients with fuzzy matching and merge support
 - **Dashboard analytics** — At-a-glance stats and charts for your book of business
 - **PDF reports** — Generate and export reports
 - **Encrypted local storage** — All data encrypted at rest with SQLCipher; no cloud, no plaintext files
 - **Command palette** — Quick navigation with `Ctrl+K`
 - **Full-text search** — Search clients by name, MBI, phone, email, city, or zip
+- **Auto-login** — Persistent session support via Tauri plugin-store
 
 ## Tech Stack
 
@@ -25,7 +29,7 @@ A local-first, HIPAA-compliant desktop application for Medicare insurance agents
 | Frontend   | React 18, TypeScript, Vite                                  |
 | UI         | Tailwind CSS, shadcn/ui, Radix UI, Recharts, Lucide icons   |
 | State      | Zustand, TanStack Query, React Hook Form + Zod              |
-| Backend    | Rust, rusqlite + SQLCipher, Argon2, calamine, genpdf         |
+| Backend    | Rust, rusqlite + SQLCipher, Argon2, calamine, genpdf, reqwest |
 | Database   | SQLite with SQLCipher encryption, FTS5 full-text search      |
 
 ## Getting Started
@@ -67,8 +71,10 @@ compass/
 │   │   └── ui/                   # shadcn/ui primitives
 │   ├── features/                 # Feature modules
 │   │   ├── auth/                 # Login page
-│   │   ├── clients/              # Client list, detail, form
+│   │   ├── carrier-sync/         # Carrier portal sync
+│   │   ├── clients/              # Client list, detail, form, duplicate scan
 │   │   ├── dashboard/            # Dashboard analytics
+│   │   ├── engagement/           # Conversations, timeline, follow-ups
 │   │   ├── enrollments/          # Enrollment management
 │   │   ├── import/               # File import wizard
 │   │   ├── reports/              # Report generation
@@ -79,14 +85,19 @@ compass/
 │   └── types/                    # TypeScript type definitions
 ├── src-tauri/                    # Backend (Rust)
 │   └── src/
+│       ├── carrier_sync/         # Carrier portal implementations
 │       ├── commands/             # Tauri IPC command handlers
 │       ├── services/             # Business logic
+│       │   └── import/           # Specialized import modules
 │       ├── repositories/         # SQL data access
 │       ├── models/               # Data structures
 │       ├── db/                   # Connection, migrations, seed data
 │       └── error.rs              # Error types
+├── docs/                         # Project documentation
+│   ├── DEVELOPMENT.md            # Developer reference
+│   ├── carrier-sync.md           # Carrier sync architecture
+│   └── carriers/                 # Per-carrier implementation docs
 ├── CLAUDE.md                     # AI assistant instructions
-├── DEVELOPMENT.md                # Developer reference
 └── package.json
 ```
 
@@ -95,7 +106,7 @@ compass/
 - **Encryption at rest** — SQLCipher encrypts the entire database file
 - **Key derivation** — Argon2id (64 MB memory, 3 iterations, 4 parallelism) derives a 32-byte key from the user's password
 - **No plaintext storage** — Database is inaccessible without the correct password; no separate auth system
-- **Local-only** — All data stays on the user's machine; no network calls, no telemetry
+- **Local-only** — All data stays on the user's machine; no telemetry, no cloud sync. Network access is limited to carrier portal sync (user-initiated, via authenticated webview)
 
 ## License
 

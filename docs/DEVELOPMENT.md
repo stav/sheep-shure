@@ -53,27 +53,30 @@ There is no separate authentication system. The password **is** the encryption k
 
 All routes are guarded by `AuthGuard` which checks `useAuthStore().isAuthenticated`:
 
-| Route                | Page             |
-| -------------------- | ---------------- |
-| `/login`             | LoginPage        |
-| `/dashboard`         | DashboardPage    |
-| `/clients`           | ClientsPage      |
-| `/clients/new`       | ClientFormPage   |
-| `/clients/:id`       | ClientDetailPage |
-| `/clients/:id/edit`  | ClientFormPage   |
-| `/enrollments`       | EnrollmentsPage  |
-| `/import`            | ImportPage       |
-| `/reports`           | ReportsPage      |
-| `/settings`          | SettingsPage     |
+| Route                  | Page              |
+| ---------------------- | ----------------- |
+| `/login`               | LoginPage         |
+| `/dashboard`           | DashboardPage     |
+| `/clients`             | ClientsPage       |
+| `/clients/new`         | ClientFormPage    |
+| `/clients/:id`         | ClientDetailPage  |
+| `/clients/:id/edit`    | ClientFormPage    |
+| `/clients/duplicates`  | DuplicateScanPage |
+| `/enrollments`         | EnrollmentsPage   |
+| `/import`              | ImportPage        |
+| `/reports`             | ReportsPage       |
+| `/carrier-sync`        | CarrierSyncPage   |
+| `/settings`            | SettingsPage      |
 
 See `src/app/router.tsx`.
 
 ### Zustand Stores
 
-| Store          | Purpose                           | File                     |
-| -------------- | --------------------------------- | ------------------------ |
-| `useAuthStore` | Auth state (isAuthenticated, etc) | `src/stores/authStore.ts` |
-| `useAppStore`  | UI state (sidebar collapsed)      | `src/stores/appStore.ts`  |
+| Store           | Purpose                           | File                      |
+| --------------- | --------------------------------- | ------------------------- |
+| `useAuthStore`  | Auth state (isAuthenticated, etc) | `src/stores/authStore.ts` |
+| `useAppStore`   | UI state (sidebar collapsed)      | `src/stores/appStore.ts`  |
+| `useThemeStore` | Theme preferences                 | `src/stores/themeStore.ts` |
 
 ### TanStack Query Hooks
 
@@ -100,21 +103,32 @@ export function useCreateClient() {
 
 The `tauriInvoke` wrapper in `src/lib/tauri.ts` is a typed passthrough to `@tauri-apps/api/core`'s `invoke`.
 
+Additional hooks beyond clients/enrollments:
+
+| Hook                  | File                          | Purpose                              |
+| --------------------- | ----------------------------- | ------------------------------------ |
+| `useCarrierSync`      | `src/hooks/useCarrierSync.ts` | Carrier portal sync queries/mutations |
+| `useConversations`    | `src/hooks/useConversations.ts` | Conversation CRUD and timeline       |
+| `useZoom`             | `src/hooks/useZoom.ts`        | Webview zoom control                 |
+| `useKeyboardShortcuts`| `src/hooks/useKeyboardShortcuts.ts` | Global keyboard shortcuts       |
+
 ## Backend Architecture
 
 ### Tauri Commands
 
 Registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![]`. Organized by domain:
 
-| Module                | Commands                                             |
-| --------------------- | ---------------------------------------------------- |
-| `auth_commands`       | check_first_run, create_account, login, logout       |
-| `client_commands`     | get_clients, get_client, create/update/delete_client, delete_all_clients |
-| `enrollment_commands` | get_enrollments, create/update_enrollment             |
-| `carrier_commands`    | get_carriers                                          |
-| `import_commands`     | parse_import_file, validate_import, execute_import    |
-| `report_commands`     | get_report, export_report_pdf, get_dashboard_stats   |
-| `settings_commands`   | get/update_settings, get/save_agent_profile, backup_database |
+| Module                     | Commands                                             |
+| -------------------------- | ---------------------------------------------------- |
+| `auth_commands`            | check_first_run, create_account, login, logout       |
+| `client_commands`          | get_clients, get_client, create/update/delete_client, hard_delete_client, merge_clients, check_client_duplicates, find_duplicate_clients, delete_all_clients |
+| `enrollment_commands`      | get_enrollments, create/update_enrollment             |
+| `conversation_commands`    | get_conversations, get/create/update_conversation, get/create/update_conversation_entry, get_client_timeline, get_pending_follow_ups, create_system_event |
+| `carrier_commands`         | get_carriers                                          |
+| `carrier_sync_commands`    | open_carrier_login, trigger_carrier_fetch, process_portal_members, get_carrier_login_url, get_carrier_sync_info, import_portal_members, confirm_disenrollments, get_sync_logs, update_carrier_expected_active, save/get/delete_portal_credentials, get_carriers_with_credentials |
+| `import_commands`          | parse_import_file, validate_import, preview_import, execute_import, import_call_log, import_integrity, import_sirem, enrich_leadsmaster |
+| `report_commands`          | get_report, export_report_pdf, get_dashboard_stats   |
+| `settings_commands`        | get/update_settings, get/save_agent_profile, backup_database, get_database_info |
 
 ### Error Handling
 
@@ -128,22 +142,26 @@ pub enum AppError {
     NotFound(String),
     Import(String),
     Io(String),
+    CarrierSync(String),
 }
 ```
 
-`AppError` implements `Serialize`, so Tauri's blanket `From<T: Serialize> for InvokeError` handles the conversion automatically — no manual `From` impl needed.
+`AppError` derives `thiserror::Error` and `Serialize`. Blanket `From` impls convert `rusqlite::Error`, `reqwest::Error`, and `std::io::Error` into the appropriate variant. Tauri's `From<T: Serialize> for InvokeError` handles the final conversion — no manual impl needed.
 
 ### Models
 
 Defined in `src-tauri/src/models/`:
 
-| Model        | File             |
-| ------------ | ---------------- |
-| `Client`     | `client.rs`      |
-| `Enrollment` | `enrollment.rs`  |
-| `Carrier`    | `carrier.rs`     |
-| `Plan`       | `plan.rs`        |
-| Report types | `report.rs`      |
+| Model             | File               |
+| ----------------- | ------------------ |
+| `Client`          | `client.rs`        |
+| `Enrollment`      | `enrollment.rs`    |
+| `Carrier`         | `carrier.rs`       |
+| `CarrierSync`     | `carrier_sync.rs`  |
+| `Conversation`    | `conversation.rs`  |
+| `Plan`            | `plan.rs`          |
+| `Provider`        | `provider.rs`      |
+| Report types      | `report.rs`        |
 
 ## Database
 
@@ -162,28 +180,40 @@ Migrations use SQLite's `PRAGMA user_version` for tracking (`src-tauri/src/db/mi
 3. Update `user_version` after each successful migration
 4. Migrations are embedded via `include_str!()` and run on every login (idempotent)
 
-Current migrations: `v001_initial.sql`
+Current migrations:
+
+| Migration                       | Purpose                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `v001_initial.sql`              | Core schema (clients, enrollments, carriers, etc) |
+| `v002_conversations.sql`        | Threaded conversations replacing notes table      |
+| `v003_carrier_sync.sql`         | Carrier sync logs table                           |
+| `v004_caresource_enrollments.sql` | Seed CareSource enrollments for existing clients |
+| `v005_expected_active.sql`      | `expected_active` column on carriers              |
+| `v006_member_details.sql`       | `member_record_locator` on clients, `client_providers` table |
 
 ### Schema
 
-10 tables, 1 FTS virtual table:
+Core tables + FTS virtual table:
 
-| Table                     | Purpose                       |
-| ------------------------- | ----------------------------- |
-| `clients`                 | Core client records           |
-| `enrollments`             | Plan enrollment tracking      |
-| `plans`                   | Plan definitions              |
-| `carriers`                | Insurance carriers            |
-| `plan_types`              | Plan type codes (MA, MAPD...) |
-| `enrollment_statuses`     | Status lifecycle codes        |
-| `enrollment_periods`      | AEP, OEP, SEP, etc.          |
-| `states`                  | US states + territories       |
-| `notes`                   | Client notes                  |
-| `import_logs`             | Import history                |
-| `agent_profile`           | Agent info and NPN            |
-| `agent_carrier_numbers`   | Agent writing numbers         |
-| `app_settings`            | Key-value app settings        |
-| `clients_fts`             | FTS5 full-text search index   |
+| Table                     | Purpose                                  |
+| ------------------------- | ---------------------------------------- |
+| `clients`                 | Core client records                      |
+| `enrollments`             | Plan enrollment tracking                 |
+| `plans`                   | Plan definitions                         |
+| `carriers`                | Insurance carriers (+ `expected_active`) |
+| `plan_types`              | Plan type codes (MA, MAPD...)            |
+| `enrollment_statuses`     | Status lifecycle codes                   |
+| `enrollment_periods`      | AEP, OEP, SEP, etc.                     |
+| `states`                  | US states + territories                  |
+| `conversations`           | Threaded client conversations            |
+| `conversation_entries`    | Individual entries within conversations  |
+| `carrier_sync_logs`       | Carrier portal sync history              |
+| `client_providers`        | Client PCP/provider records              |
+| `import_logs`             | Import history                           |
+| `agent_profile`           | Agent info and NPN                       |
+| `agent_carrier_numbers`   | Agent writing numbers                    |
+| `app_settings`            | Key-value app settings                   |
+| `clients_fts`             | FTS5 full-text search index              |
 
 ### FTS5
 
@@ -229,7 +259,7 @@ pub async fn login(password: String, ...) -> Result<(), String> {
 
 ### Soft Deletes
 
-Records use `is_active INTEGER DEFAULT 1`. Queries filter by `is_active = 1`. Records are never physically deleted.
+Records use `is_active INTEGER DEFAULT 1`. Queries filter by `is_active = 1`. `delete_client` sets `is_active = 0` (soft delete). `hard_delete_client` physically removes the record (used for duplicate merging and data cleanup).
 
 ### IDs and Dates
 
@@ -245,7 +275,9 @@ Mutations invalidate relevant query keys on success:
 
 ## Import System
 
-The import follows a 4-step pipeline:
+### General File Import
+
+The general import follows a 4-step pipeline:
 
 1. **Parse** — Read CSV/XLSX file, extract headers and sample rows (`parse_file`)
 2. **Auto-map** — Match source column headers to target fields using alias lookup (`auto_map_columns`)
@@ -259,6 +291,20 @@ Deduplication logic:
 - Fall back to first_name + last_name + DOB
 - If matched: update only non-empty fields that differ
 - If no match: insert as new client
+
+### Specialized Importers
+
+Located in `src-tauri/src/services/import/`:
+
+| Module         | Command             | Purpose                                  |
+| -------------- | ------------------- | ---------------------------------------- |
+| `file_import`  | execute_import      | General CSV/XLSX import with column mapping |
+| `call_log`     | import_call_log     | Call log file import                     |
+| `integrity`    | import_integrity    | Integrity report import                  |
+| `sirem`        | import_sirem        | SIREM file import                        |
+| `leadsmaster`  | enrich_leadsmaster  | Enrich existing clients from Leadsmaster |
+| `shared`       | —                   | Shared utilities across importers        |
+| `matching`     | —                   | Fuzzy client matching service (in `services/matching.rs`) |
 
 ## WebKit2GTK Quirks
 
@@ -335,34 +381,38 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 ## File Inventory
 
-### Rust (33 `.rs` files + 1 `.sql`)
+### Rust (57 `.rs` files + 6 `.sql`)
 
-| Layer        | Files                                                              |
-| ------------ | ------------------------------------------------------------------ |
-| Commands     | auth, client, carrier, enrollment, import, report, settings + mod  |
-| Services     | auth, client, dashboard, enrollment, import, report + mod          |
-| Repositories | carrier, client, enrollment, report + mod                          |
-| Models       | carrier, client, enrollment, plan, report + mod                    |
-| DB           | connection, migrations, seed + mod                                 |
-| Other        | lib.rs, main.rs, error.rs                                          |
-| SQL          | v001_initial.sql                                                   |
+| Layer          | Files                                                                 |
+| -------------- | --------------------------------------------------------------------- |
+| Commands       | auth, client, carrier, carrier_sync, conversation, enrollment, import, report, settings + mod |
+| Services       | auth, carrier_sync, client, conversation, dashboard, enrollment, matching, provider, report + mod |
+| Services/Import| call_log, file_import, integrity, leadsmaster, shared, sirem + mod    |
+| Repositories   | carrier, client, conversation, enrollment, provider, report + mod     |
+| Models         | carrier, carrier_sync, client, conversation, enrollment, plan, provider, report + mod |
+| Carrier Sync   | devoted, caresource, medmutual, uhc, humana, anthem + mod            |
+| DB             | connection, migrations, seed + mod                                    |
+| Other          | lib.rs, main.rs, error.rs                                             |
+| SQL            | v001_initial, v002_conversations, v003_carrier_sync, v004_caresource_enrollments, v005_expected_active, v006_member_details |
 
-### Frontend (41 `.ts`/`.tsx` files)
+### Frontend (69 `.ts`/`.tsx` files)
 
-| Area       | Files                                                               |
-| ---------- | ------------------------------------------------------------------- |
-| App        | App.tsx, router.tsx, providers.tsx, main.tsx                         |
-| Layout     | AppLayout.tsx, CommandPalette.tsx, index.ts                         |
-| UI         | button, card, dialog, input, label, separator, tooltip              |
-| Auth       | LoginPage.tsx, index.ts                                             |
-| Clients    | ClientsPage, ClientDetailPage, ClientFormPage, index.ts            |
-| Dashboard  | DashboardPage.tsx, index.ts                                         |
-| Enrollments| EnrollmentsPage.tsx, index.ts                                       |
-| Import     | ImportPage.tsx, index.ts                                            |
-| Reports    | ReportsPage.tsx, index.ts                                           |
-| Settings   | SettingsPage.tsx, index.ts                                          |
-| Hooks      | useClients, useEnrollments, useKeyboardShortcuts, index.ts          |
-| Stores     | authStore.ts, appStore.ts                                           |
-| Lib        | tauri.ts, utils.ts                                                  |
-| Types      | index.ts                                                            |
-| Other      | ErrorBoundary.tsx, vite-env.d.ts                                    |
+| Area           | Files                                                                |
+| -------------- | -------------------------------------------------------------------- |
+| App            | App.tsx, router.tsx, providers.tsx, main.tsx                          |
+| Layout         | AppLayout.tsx, CommandPalette.tsx, index.ts                          |
+| UI             | badge, button, card, checkbox, dialog, dropdown-menu, input, label, scroll-area, select, separator, tabs, textarea, tooltip |
+| Auth           | LoginPage.tsx, index.ts                                              |
+| Carrier Sync   | CarrierSyncPage, CarrierTable, CredentialsDialog, DisenrollmentSection, NewInPortalSection, SyncResultsPanel, utils, index.ts |
+| Clients        | ClientsPage, ClientDetailPage, ClientFormPage, DuplicateScanPage, index.ts |
+| Dashboard      | DashboardPage.tsx, index.ts                                          |
+| Engagement     | ClientEngagementSection, ConversationDetail, ConversationList, EntryFormDialog, FollowUpBadge, NewConversationDialog, TimelineCard, index.ts |
+| Enrollments    | EnrollmentsPage.tsx, index.ts                                        |
+| Import         | ImportPage.tsx, index.ts                                             |
+| Reports        | ReportsPage.tsx, index.ts                                            |
+| Settings       | SettingsPage.tsx, index.ts                                           |
+| Hooks          | useClients, useConversations, useCarrierSync, useEnrollments, useKeyboardShortcuts, useZoom, index.ts |
+| Stores         | authStore.ts, appStore.ts, themeStore.ts                             |
+| Lib            | tauri.ts, utils.ts                                                   |
+| Types          | index.ts                                                             |
+| Other          | ErrorBoundary.tsx, vite-env.d.ts                                     |
