@@ -2,6 +2,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::error::AppError;
+use crate::services::conversation_service;
 use super::file_import::ImportRowDetail;
 use super::call_log::ActivityImportResult;
 use super::shared::{normalize_date, normalize_mbi, find_client};
@@ -208,9 +209,21 @@ pub fn enrich_from_leadsmaster(
             sets.join(", "),
             idx
         );
-        params.push(Box::new(client_id));
+        params.push(Box::new(client_id.clone()));
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, refs.as_slice())?;
+
+        let event_data = serde_json::json!({
+            "source": "leadsmaster",
+            "fields": updated_fields,
+        })
+        .to_string();
+        let _ = conversation_service::create_system_event(
+            conn,
+            &client_id,
+            "CLIENT_UPDATED",
+            Some(&event_data),
+        );
 
         imported += 1;
         imported_details.push(ImportRowDetail {

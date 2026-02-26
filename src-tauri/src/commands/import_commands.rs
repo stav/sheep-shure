@@ -143,13 +143,44 @@ pub fn execute_import(
         .map_err(|e| e.to_string())
 }
 
+/// Log an activity import result to the import_logs table.
+fn log_activity_import(
+    conn: &rusqlite::Connection,
+    source_path: &str,
+    file_type: &str,
+    result: &ActivityImportResult,
+) {
+    let log_id = uuid::Uuid::new_v4().to_string();
+    let filename = std::path::Path::new(source_path)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| source_path.to_string());
+    let _ = conn.execute(
+        "INSERT INTO import_logs (id, filename, file_type, total_rows, inserted_rows, skipped_rows, error_rows, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'COMPLETED')",
+        rusqlite::params![
+            log_id,
+            filename,
+            file_type,
+            result.total_source_rows,
+            result.imported,
+            result.skipped,
+            result.unmatched,
+        ],
+    );
+}
+
 #[tauri::command]
 pub fn import_call_log(
     source_path: String,
     state: State<'_, DbState>,
 ) -> Result<ActivityImportResult, String> {
     state
-        .with_conn(|conn| import_service::import_call_log_from_db(conn, &source_path))
+        .with_conn(|conn| {
+            let result = import_service::import_call_log_from_db(conn, &source_path)?;
+            log_activity_import(conn, &source_path, "CALL_LOG_DB", &result);
+            Ok(result)
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -159,7 +190,11 @@ pub fn import_integrity(
     state: State<'_, DbState>,
 ) -> Result<ActivityImportResult, String> {
     state
-        .with_conn(|conn| import_service::import_integrity_from_json(conn, &source_path))
+        .with_conn(|conn| {
+            let result = import_service::import_integrity_from_json(conn, &source_path)?;
+            log_activity_import(conn, &source_path, "INTEGRITY_JSON", &result);
+            Ok(result)
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -169,7 +204,11 @@ pub fn import_sirem(
     state: State<'_, DbState>,
 ) -> Result<ActivityImportResult, String> {
     state
-        .with_conn(|conn| import_service::import_sirem_from_dump(conn, &dump_path))
+        .with_conn(|conn| {
+            let result = import_service::import_sirem_from_dump(conn, &dump_path)?;
+            log_activity_import(conn, &dump_path, "SIREM_DUMP", &result);
+            Ok(result)
+        })
         .map_err(|e| e.to_string())
 }
 
@@ -179,6 +218,10 @@ pub fn enrich_leadsmaster(
     state: State<'_, DbState>,
 ) -> Result<ActivityImportResult, String> {
     state
-        .with_conn(|conn| import_service::enrich_from_leadsmaster(conn, &source_path))
+        .with_conn(|conn| {
+            let result = import_service::enrich_from_leadsmaster(conn, &source_path)?;
+            log_activity_import(conn, &source_path, "LEADSMASTER_DB", &result);
+            Ok(result)
+        })
         .map_err(|e| e.to_string())
 }

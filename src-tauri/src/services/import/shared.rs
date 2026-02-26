@@ -2,6 +2,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::services::conversation_service;
 use crate::services::matching::{self, MatchOptions};
 
 // Re-export normalization functions so existing `use super::shared::` paths work
@@ -56,10 +57,11 @@ pub fn find_client(
 }
 
 /// Upsert a client: insert if new, or fill NULL/empty fields on existing record.
-/// Returns (client_id, action).
+/// Returns (client_id, action). `source` is used for system event logging.
 pub fn upsert_client(
     conn: &Connection,
     data: &ImportClientData,
+    source: Option<&str>,
 ) -> Result<(String, UpsertAction), AppError> {
     let existing_id = find_client(
         conn,
@@ -183,45 +185,81 @@ pub fn upsert_client(
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, refs.as_slice())?;
 
+        if !updated_fields.is_empty() {
+            let event_data = serde_json::json!({
+                "source": source.unwrap_or("import"),
+                "fields": updated_fields,
+            })
+            .to_string();
+            let _ = conversation_service::create_system_event(
+                conn,
+                &client_id,
+                "CLIENT_UPDATED",
+                Some(&event_data),
+            );
+        }
+
         Ok((client_id, UpsertAction::Updated))
     } else {
-        // Insert new client
-        let id = Uuid::new_v4().to_string();
-        conn.execute(
-            "INSERT INTO clients (id, first_name, last_name, middle_name, dob, gender,
-             phone, phone2, email, address_line1, address_line2, city, state, zip, county,
-             mbi, part_a_date, part_b_date, is_dual_eligible, dual_status_code, lis_level,
-             medicaid_id, lead_source, tags, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-                     ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
-            rusqlite::params![
-                id,
-                data.first_name,
-                data.last_name,
-                data.middle_name,
-                data.dob,
-                data.gender,
-                data.phone,
-                data.phone2,
-                data.email,
-                data.address_line1,
-                data.address_line2,
-                data.city,
-                data.state,
-                data.zip,
-                data.county,
-                data.mbi,
-                data.part_a_date,
-                data.part_b_date,
-                data.is_dual_eligible.unwrap_or(false),
-                data.dual_status_code,
-                data.lis_level,
-                data.medicaid_id,
-                data.lead_source,
-                data.tags,
-                data.notes,
-            ],
-        )?;
+        let id = insert_client(conn, data, source)?;
         Ok((id, UpsertAction::Inserted))
     }
+}
+
+/// Insert a new client from `ImportClientData`. Returns the new client ID.
+/// Logs a CLIENT_IMPORTED system event.
+pub fn insert_client(
+    conn: &Connection,
+    data: &ImportClientData,
+    source: Option<&str>,
+) -> Result<String, AppError> {
+    let id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO clients (id, first_name, last_name, middle_name, dob, gender,
+         phone, phone2, email, address_line1, address_line2, city, state, zip, county,
+         mbi, part_a_date, part_b_date, is_dual_eligible, dual_status_code, lis_level,
+         medicaid_id, lead_source, tags, notes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                 ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
+        rusqlite::params![
+            id,
+            data.first_name,
+            data.last_name,
+            data.middle_name,
+            data.dob,
+            data.gender,
+            data.phone,
+            data.phone2,
+            data.email,
+            data.address_line1,
+            data.address_line2,
+            data.city,
+            data.state,
+            data.zip,
+            data.county,
+            data.mbi,
+            data.part_a_date,
+            data.part_b_date,
+            data.is_dual_eligible.unwrap_or(false),
+            data.dual_status_code,
+            data.lis_level,
+            data.medicaid_id,
+            data.lead_source,
+            data.tags,
+            data.notes,
+        ],
+    )?;
+
+    let event_data = serde_json::json!({
+        "source": source.unwrap_or("import"),
+    })
+    .to_string();
+    let _ = conversation_service::create_system_event(
+        conn,
+        &id,
+        "CLIENT_IMPORTED",
+        Some(&event_data),
+    );
+
+    Ok(id)
 }

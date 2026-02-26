@@ -282,7 +282,7 @@ pub fn import_sirem_from_dump(
 
         let client_label = format!("{} {}", first_name, last_name);
 
-        match upsert_client(conn, &client_data) {
+        match upsert_client(conn, &client_data, Some("sirem")) {
             Ok((client_id, action)) => {
                 sirem_to_compass.insert(sirem_id, client_id);
                 match action {

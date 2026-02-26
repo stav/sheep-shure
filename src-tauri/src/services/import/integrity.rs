@@ -240,7 +240,7 @@ pub fn import_integrity_from_json(
 
         let client_label = format!("{} {}", first_name, last_name);
 
-        match upsert_client(conn, &client_data) {
+        match upsert_client(conn, &client_data, Some("integrity")) {
             Ok((client_id, action)) => {
                 // Import activities as conversation entries
                 let activity_count = import_integrity_activities(conn, &client_id, &lead.activities)?;

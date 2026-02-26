@@ -1,10 +1,21 @@
 use std::collections::HashMap;
 use calamine::Reader;
 use rusqlite::Connection;
-use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::services::conversation_service;
+use crate::services::matching;
+use super::shared::{ImportClientData, insert_client};
+
+/// Fields that should be normalized before storage/comparison.
+fn normalize_field_value(field: &str, val: String) -> String {
+    match field {
+        "dob" => matching::normalize_date(&val).unwrap_or(val),
+        "mbi" => matching::normalize_mbi(&val).unwrap_or(val),
+        "phone" | "phone2" => matching::normalize_phone(&val).unwrap_or(val),
+        _ => val,
+    }
+}
 
 /// Parsed file result: headers and sample rows
 #[derive(serde::Serialize)]
@@ -541,7 +552,7 @@ pub fn preview_import(
     let mut skipped = Vec::new();
 
     for (i, row) in rows.iter().enumerate() {
-        let get_val = |target: &str| -> Option<String> {
+        let get_raw = |target: &str| -> Option<String> {
             if let Some(idx) = find_mapped_index(headers, mapping, target) {
                 let val = row.get(idx).map(|v| v.trim().to_string()).unwrap_or_default();
                 if !val.is_empty() {
@@ -549,6 +560,9 @@ pub fn preview_import(
                 }
             }
             constant_values.get(target).filter(|v| !v.is_empty()).cloned()
+        };
+        let get_val = |target: &str| -> Option<String> {
+            get_raw(target).map(|v| normalize_field_value(target, v))
         };
 
         let first_name = match get_val("first_name") {
@@ -694,7 +708,7 @@ fn import_single_row(
     approved_updates: Option<&HashMap<String, Vec<String>>>,
     approved_inserts: Option<&Vec<usize>>,
 ) -> Result<ImportAction, AppError> {
-    let get_val = |target: &str| -> Option<String> {
+    let get_raw = |target: &str| -> Option<String> {
         // Try column mapping first
         if let Some(idx) = find_mapped_index(headers, mapping, target) {
             let val = row.get(idx)?.trim().to_string();
@@ -704,6 +718,9 @@ fn import_single_row(
         }
         // Fall back to constant value
         constant_values.get(target).filter(|v| !v.is_empty()).cloned()
+    };
+    let get_val = |target: &str| -> Option<String> {
+        get_raw(target).map(|v| normalize_field_value(target, v))
     };
 
     let first_name =
@@ -803,47 +820,34 @@ fn import_single_row(
                 return Ok(ImportAction::Skipped { name: client_name });
             }
         }
-        // Insert new client
-        let id = Uuid::new_v4().to_string();
-        conn.execute(
-            "INSERT INTO clients (id, first_name, last_name, middle_name, dob, gender, phone, phone2, email,
-             address_line1, address_line2, city, state, zip, county, mbi, lead_source, dual_status_code, lis_level, medicaid_id, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
-            rusqlite::params![
-                id,
-                first_name,
-                last_name,
-                get_val("middle_name"),
-                get_val("dob"),
-                get_val("gender"),
-                get_val("phone"),
-                get_val("phone2"),
-                get_val("email"),
-                get_val("address_line1"),
-                get_val("address_line2"),
-                get_val("city"),
-                get_val("state"),
-                get_val("zip"),
-                get_val("county"),
-                mbi,
-                get_val("lead_source"),
-                get_val("dual_status_code"),
-                get_val("lis_level"),
-                get_val("medicaid_id"),
-                get_val("notes")
-            ],
-        )?;
-
-        let event_data = serde_json::json!({
-            "source": "file_import",
-        })
-        .to_string();
-        let _ = conversation_service::create_system_event(
-            conn,
-            &id,
-            "CLIENT_IMPORTED",
-            Some(&event_data),
-        );
+        // Insert new client via shared helper
+        let client_data = ImportClientData {
+            first_name,
+            last_name,
+            middle_name: get_val("middle_name"),
+            dob: get_val("dob"),
+            gender: get_val("gender"),
+            phone: get_val("phone"),
+            phone2: get_val("phone2"),
+            email: get_val("email"),
+            address_line1: get_val("address_line1"),
+            address_line2: get_val("address_line2"),
+            city: get_val("city"),
+            state: get_val("state"),
+            zip: get_val("zip"),
+            county: get_val("county"),
+            mbi,
+            part_a_date: get_val("part_a_date"),
+            part_b_date: get_val("part_b_date"),
+            is_dual_eligible: None,
+            dual_status_code: get_val("dual_status_code"),
+            lis_level: get_val("lis_level"),
+            medicaid_id: get_val("medicaid_id"),
+            lead_source: get_val("lead_source"),
+            tags: get_val("tags"),
+            notes: get_val("notes"),
+        };
+        insert_client(conn, &client_data, Some("file_import"))?;
 
         Ok(ImportAction::Inserted { name: client_name })
     }

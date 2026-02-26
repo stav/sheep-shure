@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::services::conversation_service;
 use crate::services::matching;
 use super::file_import::ImportRowDetail;
 
@@ -246,6 +247,18 @@ pub fn import_call_log_from_db(
                 call_phone_number,
             ],
         )?;
+
+        let event_data = serde_json::json!({
+            "source": "call_log_import",
+            "entry_type": entry_type,
+        })
+        .to_string();
+        let _ = conversation_service::create_system_event(
+            app_conn,
+            &client_id,
+            "ACTIVITY_IMPORTED",
+            Some(&event_data),
+        );
 
         imported += 1;
         imported_details.push(ImportRowDetail {
