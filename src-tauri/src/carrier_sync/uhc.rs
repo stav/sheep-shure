@@ -9,17 +9,63 @@ pub struct UhcPortal;
 
 const LOGIN_URL: &str = "https://www.uhcjarvis.com/content/jarvis/en/secure/book-of-business-search.html";
 
-/// Intercept the Jarvis SPA's own bookOfBusiness API call to capture the
-/// agent's partyID (from request body) and opd (from query string).
-/// Patches both fetch and XHR since Angular may use either.
+/// Intercept the Jarvis SPA's own bookOfBusiness API response to capture
+/// member data directly. Patches both fetch and XHR since Angular may use
+/// either. This avoids making a second API call (which can fail due to
+/// missing auth headers / CSRF tokens).
 const INIT_SCRIPT: &str = r#"
 (function() {
+    // ── Shared helpers ──
+
+    function toIso(dateStr) {
+        if (!dateStr) return null;
+        var m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return m ? (m[3] + '-' + m[1] + '-' + m[2]) : dateStr;
+    }
+
+    function mapMembers(list) {
+        return list.map(function(m) {
+            return {
+                first_name: (m.memberFirstName || '').trim(),
+                last_name:  (m.memberLastName || '').trim(),
+                member_id:  m.memberNumber || m.mbiNumber || null,
+                dob:        toIso(m.dateOfBirth),
+                plan_name:  m.planName || null,
+                effective_date: m.policyEffectiveDate || null,
+                end_date:   (m.policyTermDate && m.policyTermDate !== '2300-01-01')
+                                ? m.policyTermDate : null,
+                status:     m.memberStatus === 'A' ? 'Active' : (m.memberStatus || null),
+                policy_status: null,
+                state: m.memberState || null,
+                city:  m.memberCity || null,
+                phone: m.memberPhone || null,
+                email: m.memberEmail || null
+            };
+        });
+    }
+
+    function sendData(members) {
+        if (window.__compassBobFetched) return;
+        window.__compassBobFetched = true;
+        window.location.href = 'http://compass-sync.localhost/data?members=' +
+            encodeURIComponent(JSON.stringify(members));
+    }
+
+    function sendError(message) {
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
+            encodeURIComponent(message);
+    }
+
+    function isBobDetailsUrl(url) {
+        return url.includes('bookOfBusiness') && url.includes('details');
+    }
+
     function extractFromUrl(url) {
         try {
-            const urlObj = new URL(url, window.location.origin);
-            const opd = urlObj.searchParams.get('opd');
+            var urlObj = new URL(url, window.location.origin);
+            var opd = urlObj.searchParams.get('opd');
             if (opd) window.__compass_uhc_opd = opd;
-            const hp = urlObj.searchParams.get('hasPrincipalOrCorp');
+            var hp = urlObj.searchParams.get('hasPrincipalOrCorp');
             if (hp !== null) window.__compass_uhc_hasPrincipal = hp;
         } catch (e) {}
     }
@@ -27,71 +73,148 @@ const INIT_SCRIPT: &str = r#"
     function extractFromBody(body) {
         if (!body) return;
         try {
-            const parsed = typeof body === 'string' ? JSON.parse(body) : body;
+            var parsed = typeof body === 'string' ? JSON.parse(body) : body;
             if (parsed.partyID) window.__compass_uhc_partyID = parsed.partyID;
         } catch (e) {}
     }
 
-    // Auto-trigger fetch once both credentials are captured
-    function tryAutoFetch() {
-        if (window.__compass_uhc_partyID && window.__compass_uhc_opd && !window.__compassBobFetched) {
-            setTimeout(function() {
-                if (window.__compassFetchUhc && !window.__compassBobFetched) {
-                    window.__compassFetchUhc(true);
-                }
-            }, 500);
-        }
+    function processApiResponse(text) {
+        try {
+            var data = JSON.parse(text);
+            if (data.bookOfBusinessList) {
+                var members = mapMembers(data.bookOfBusinessList);
+                sendData(members);
+                return true;
+            }
+        } catch (e) {}
+        return false;
     }
 
-    // Patch fetch
-    const origFetch = window.fetch;
+    // ── Patch fetch: intercept RESPONSE from Angular's BoB API call ──
+    var origFetch = window.fetch;
     window.fetch = function(resource, init) {
         try {
-            const url = typeof resource === 'string' ? resource :
-                         (resource instanceof Request ? resource.url : String(resource));
-            if (url.includes('bookOfBusiness')) {
+            var url = typeof resource === 'string' ? resource :
+                       (resource instanceof Request ? resource.url : String(resource));
+            if (isBobDetailsUrl(url)) {
                 extractFromUrl(url);
                 if (init && init.body) extractFromBody(init.body);
-                tryAutoFetch();
+
+                // Save the original request info for manual replay
+                window.__compass_uhc_lastBobUrl = url;
+                window.__compass_uhc_lastBobInit = init;
+
+                // Intercept the response
+                return origFetch.apply(this, arguments).then(function(response) {
+                    if (response.ok && !window.__compassBobFetched) {
+                        var clone = response.clone();
+                        clone.text().then(function(text) {
+                            processApiResponse(text);
+                        }).catch(function() {});
+                    }
+                    return response; // return original to Angular untouched
+                });
             }
         } catch (e) {}
         return origFetch.apply(this, arguments);
     };
 
-    // Patch XHR
-    const origOpen = XMLHttpRequest.prototype.open;
-    const origSend = XMLHttpRequest.prototype.send;
+    // ── Patch XHR: intercept RESPONSE from Angular's BoB API call ──
+    var origOpen = XMLHttpRequest.prototype.open;
+    var origSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function(method, url) {
         this.__compass_url = typeof url === 'string' ? url : String(url);
         return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function(body) {
         try {
-            if (this.__compass_url && this.__compass_url.includes('bookOfBusiness')) {
+            if (this.__compass_url && isBobDetailsUrl(this.__compass_url)) {
                 extractFromUrl(this.__compass_url);
                 extractFromBody(body);
-                tryAutoFetch();
+
+                // Save the original request info for manual replay
+                window.__compass_uhc_lastBobUrl = this.__compass_url;
+
+                // Intercept response when it arrives
+                var xhr = this;
+                xhr.addEventListener('load', function() {
+                    if (xhr.status >= 200 && xhr.status < 300 && !window.__compassBobFetched) {
+                        processApiResponse(xhr.responseText);
+                    }
+                });
             }
         } catch (e) {}
         return origSend.apply(this, arguments);
     };
 })();
 
-// ── Fetch function (also called by init interceptor above) ──
+// ── Manual fetch function (called by Sync Now button) ──
 window.__compassFetchUhc = async function(silent) {
     try {
         if (window.__compassBobFetched) return;
 
-        let partyID = window.__compass_uhc_partyID;
-        let opd = window.__compass_uhc_opd;
+        // Strategy 1: Replay the exact request Angular made (same URL, headers, body)
+        if (window.__compass_uhc_lastBobInit) {
+            try {
+                var replayResp = await fetch(
+                    window.__compass_uhc_lastBobUrl,
+                    window.__compass_uhc_lastBobInit
+                );
+                if (replayResp.ok) {
+                    var replayText = await replayResp.text();
+                    try {
+                        var replayData = JSON.parse(replayText);
+                        if (replayData.bookOfBusinessList) {
+                            var members = (function(list) {
+                                function toIso(d) {
+                                    if (!d) return null;
+                                    var m = d.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+                                    return m ? (m[3] + '-' + m[1] + '-' + m[2]) : d;
+                                }
+                                return list.map(function(m) {
+                                    return {
+                                        first_name: (m.memberFirstName || '').trim(),
+                                        last_name:  (m.memberLastName || '').trim(),
+                                        member_id:  m.memberNumber || m.mbiNumber || null,
+                                        dob:        toIso(m.dateOfBirth),
+                                        plan_name:  m.planName || null,
+                                        effective_date: m.policyEffectiveDate || null,
+                                        end_date:   (m.policyTermDate && m.policyTermDate !== '2300-01-01')
+                                                        ? m.policyTermDate : null,
+                                        status:     m.memberStatus === 'A' ? 'Active' : (m.memberStatus || null),
+                                        policy_status: null,
+                                        state: m.memberState || null,
+                                        city:  m.memberCity || null,
+                                        phone: m.memberPhone || null,
+                                        email: m.memberEmail || null
+                                    };
+                                });
+                            })(replayData.bookOfBusinessList);
+                            window.__compassBobFetched = true;
+                            window.location.href = 'http://compass-sync.localhost/data?members=' +
+                                encodeURIComponent(JSON.stringify(members));
+                            return;
+                        }
+                    } catch (e) {
+                        // Replay got non-JSON, fall through to strategy 2
+                    }
+                }
+            } catch (e) {
+                // Replay failed, fall through
+            }
+        }
+
+        // Strategy 2: Build request from captured/discovered params
+        var partyID = window.__compass_uhc_partyID;
+        var opd = window.__compass_uhc_opd;
 
         // Fallback: try to extract opd from Performance API entries
         if (!opd || !partyID) {
-            const entries = performance.getEntriesByType('resource');
-            for (const entry of entries) {
-                if (entry.name.includes('bookOfBusiness')) {
+            var entries = performance.getEntriesByType('resource');
+            for (var i = 0; i < entries.length; i++) {
+                if (entries[i].name.includes('bookOfBusiness')) {
                     try {
-                        const u = new URL(entry.name);
+                        var u = new URL(entries[i].name);
                         if (!opd) opd = u.searchParams.get('opd');
                     } catch (e) {}
                 }
@@ -104,16 +227,17 @@ window.__compassFetchUhc = async function(silent) {
                 if (!obj || typeof obj !== 'object' || depth > 4) return;
                 if (!partyID && (obj.partyID || obj.partyId)) partyID = obj.partyID || obj.partyId;
                 if (!opd && obj.opd) opd = obj.opd;
-                for (const k in obj) {
+                for (var k in obj) {
                     if (typeof obj[k] === 'object') deepFind(obj[k], depth + 1);
                     if (typeof obj[k] === 'string' && obj[k].startsWith('{')) {
                         try { deepFind(JSON.parse(obj[k]), depth + 1); } catch (e) {}
                     }
                 }
             }
-            for (const store of [sessionStorage, localStorage]) {
-                for (let i = 0; i < store.length; i++) {
-                    const val = store.getItem(store.key(i));
+            var stores = [sessionStorage, localStorage];
+            for (var s = 0; s < stores.length; s++) {
+                for (var i = 0; i < stores[s].length; i++) {
+                    var val = stores[s].getItem(stores[s].key(i));
                     try { deepFind(JSON.parse(val), 0); } catch (e) {}
                     if (partyID && opd) break;
                 }
@@ -124,17 +248,17 @@ window.__compassFetchUhc = async function(silent) {
         // Fallback: call the Jarvis partyID API directly
         if (!partyID) {
             try {
-                const pidResp = await fetch('/JarvisAccountInfo/azure/api/secure/userprofile/partyID/v1', {
+                var pidResp = await fetch('/JarvisAccountInfo/azure/api/secure/userprofile/partyID/v1', {
                     method: 'GET',
                     headers: { 'Accept': 'application/json' }
                 });
                 if (pidResp.ok) {
-                    const pidData = await pidResp.json();
+                    var pidData = await pidResp.json();
                     if (pidData.partyID) partyID = pidData.partyID;
                     else if (pidData.partyId) partyID = pidData.partyId;
                     else {
-                        const txt = JSON.stringify(pidData);
-                        const m = txt.match(/"party[Ii][Dd]"\s*:\s*"([^"]+)"/);
+                        var txt = JSON.stringify(pidData);
+                        var m = txt.match(/"party[Ii][Dd]"\s*:\s*"([^"]+)"/);
                         if (m) partyID = m[1];
                     }
                 }
@@ -143,26 +267,19 @@ window.__compassFetchUhc = async function(silent) {
 
         if (!partyID) {
             if (silent) return;
-            const debug = {
-                captured: { partyID: partyID || null, opd: opd || null },
-                ls_keys: Object.keys(localStorage),
-                ss_keys: Object.keys(sessionStorage),
-                cookies: document.cookie.split(';').map(function(c) { return c.trim().split('=')[0]; }),
-                perf_bob: performance.getEntriesByType('resource')
-                    .filter(function(e) { return e.name.includes('Jarvis') || e.name.includes('bookOfBusiness'); })
-                    .map(function(e) { return e.name.substring(0, 150); }),
-                url: window.location.href
-            };
-            throw new Error('Could not find agent ID / operator code. Debug: ' + JSON.stringify(debug));
+            throw new Error(
+                'Could not find agent ID. Make sure you are logged in and ' +
+                'the Book of Business page has loaded. Then try Sync Now again.'
+            );
         }
 
-        const hasPrincipal = window.__compass_uhc_hasPrincipal || 'false';
-        const url = '/JarvisMemberProfileAPI/azure/api/secure/bookOfBusiness/details/v1' +
+        var hasPrincipal = window.__compass_uhc_hasPrincipal || 'false';
+        var url = '/JarvisMemberProfileAPI/azure/api/secure/bookOfBusiness/details/v1' +
             '?hasPrincipalOrCorp=' + encodeURIComponent(hasPrincipal) +
             '&opd=' + encodeURIComponent(opd || '') +
             '&homePage=false';
 
-        const resp = await fetch(url, {
+        var resp = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -188,11 +305,11 @@ window.__compassFetchUhc = async function(silent) {
                     'Close this window, re-open the portal, log in again, and retry.'
                 );
             }
-            const text = await resp.text().catch(() => '');
+            var text = await resp.text().catch(function() { return ''; });
             throw new Error('API returned ' + resp.status + ': ' + text.substring(0, 300));
         }
 
-        const respText = await resp.text();
+        var respText = await resp.text();
         var data;
         try {
             data = JSON.parse(respText);
@@ -209,15 +326,13 @@ window.__compassFetchUhc = async function(silent) {
             throw new Error('API errors: ' + data.errors.join('; '));
         }
 
-        const list = data.bookOfBusinessList || [];
-
+        var list = data.bookOfBusinessList || [];
         function toIso(dateStr) {
             if (!dateStr) return null;
-            const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-            return m ? (m[3] + '-' + m[1] + '-' + m[2]) : dateStr;
+            var m2 = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            return m2 ? (m2[3] + '-' + m2[1] + '-' + m2[2]) : dateStr;
         }
-
-        const members = list.map(function(m) {
+        var members = list.map(function(m) {
             return {
                 first_name: (m.memberFirstName || '').trim(),
                 last_name:  (m.memberLastName || '').trim(),
@@ -247,11 +362,11 @@ window.__compassFetchUhc = async function(silent) {
     }
 };
 
-// Fallback: if the fetch/XHR interceptor didn't trigger auto-fetch
-// (e.g. zone.js overwrote our patches), retry periodically after load.
-window.addEventListener('load', () => {
+// Fallback: if the page already loaded and the BoB API call was already
+// made (before our patches took effect), retry periodically.
+window.addEventListener('load', function() {
     var attempts = 0;
-    var retryIv = setInterval(() => {
+    var retryIv = setInterval(function() {
         if (window.__compassBobFetched || attempts >= 6) {
             clearInterval(retryIv);
             return;

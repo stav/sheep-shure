@@ -107,6 +107,16 @@ export function CarrierSyncPage() {
     });
   };
 
+  // Auto-fetch timeout: if stuck in "login" phase for 45s, transition to idle
+  // so the user sees the Sync Now button is available
+  useEffect(() => {
+    if (syncPhase !== "login" || !isAutoFetch) return;
+    const timeout = setTimeout(() => {
+      setSyncPhase("idle");
+    }, 45000);
+    return () => clearTimeout(timeout);
+  }, [syncPhase, isAutoFetch]);
+
   // Description text based on phase and auto_fetch
   const getDescription = () => {
     if (syncPhase === "fetching") return "Fetching member data from the carrier portal...";
