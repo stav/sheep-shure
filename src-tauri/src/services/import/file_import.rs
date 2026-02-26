@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::services::conversation_service;
 
 /// Parsed file result: headers and sample rows
 #[derive(serde::Serialize)]
@@ -224,7 +225,7 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
             ],
         ),
         ("city", vec!["city", "town"]),
-        ("state", vec!["state", "st", "state code", "state_code"]),
+        ("state", vec!["state", "st", "state code", "state_code", "abbreviated state"]),
         (
             "zip",
             vec![
@@ -234,6 +235,7 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
                 "postal code",
                 "postal",
                 "zip_code",
+                "5 digit zip code",
             ],
         ),
         ("county", vec!["county", "county name", "county_name"]),
@@ -377,7 +379,11 @@ pub fn auto_map_columns(headers: &[String]) -> HashMap<String, String> {
     let mut mapping = HashMap::new();
 
     for header in headers {
-        let normalized = header.trim().to_lowercase().replace(['_', '-'], " ");
+        let mut normalized = header.trim().to_lowercase().replace(['_', '-'], " ");
+        // Strip parenthetical suffixes like "(required)" or "(optional, MM/DD/YYYY)"
+        if let Some(pos) = normalized.find('(') {
+            normalized = normalized[..pos].trim().to_string();
+        }
 
         for (target, alias_list) in &aliases {
             if alias_list.iter().any(|a| *a == normalized) {
@@ -478,6 +484,141 @@ pub fn validate_rows(
     }
 }
 
+// ── Preview types ──────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct ImportPreview {
+    pub inserts: Vec<PreviewInsert>,
+    pub updates: Vec<PreviewUpdate>,
+    pub skipped: Vec<PreviewSkipped>,
+    pub errors: Vec<ErrorRow>,
+}
+
+#[derive(serde::Serialize)]
+pub struct PreviewInsert {
+    pub row_index: usize,
+    pub name: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct PreviewUpdate {
+    pub row_index: usize,
+    pub client_id: String,
+    pub name: String,
+    pub diffs: Vec<FieldDiff>,
+}
+
+#[derive(serde::Serialize)]
+pub struct FieldDiff {
+    pub field: String,
+    pub old_value: String,
+    pub new_value: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct PreviewSkipped {
+    pub row_index: usize,
+    pub name: String,
+    pub reason: String,
+}
+
+const UPDATABLE_FIELDS: &[&str] = &[
+    "phone", "email", "address_line1", "address_line2",
+    "city", "state", "zip", "county",
+    "dual_status_code", "lis_level", "medicaid_id", "notes",
+];
+
+/// Build a preview of what the import will do (dry-run with DB lookup)
+pub fn preview_import(
+    conn: &Connection,
+    rows: &[Vec<String>],
+    headers: &[String],
+    mapping: &HashMap<String, String>,
+    constant_values: &HashMap<String, String>,
+) -> Result<ImportPreview, AppError> {
+    let mut inserts = Vec::new();
+    let mut updates = Vec::new();
+    let mut skipped = Vec::new();
+
+    for (i, row) in rows.iter().enumerate() {
+        let get_val = |target: &str| -> Option<String> {
+            if let Some(idx) = find_mapped_index(headers, mapping, target) {
+                let val = row.get(idx).map(|v| v.trim().to_string()).unwrap_or_default();
+                if !val.is_empty() {
+                    return Some(val);
+                }
+            }
+            constant_values.get(target).filter(|v| !v.is_empty()).cloned()
+        };
+
+        let first_name = match get_val("first_name") {
+            Some(v) => v,
+            None => continue,
+        };
+        let last_name = match get_val("last_name") {
+            Some(v) => v,
+            None => continue,
+        };
+        let mbi = get_val("mbi");
+        let client_name = format!("{} {}", first_name, last_name);
+
+        let existing_id = find_existing_client(conn, &first_name, &last_name, &mbi, &get_val);
+
+        if let Some(client_id) = existing_id {
+            // Compare each updatable field
+            let mut diffs = Vec::new();
+            for &field in UPDATABLE_FIELDS {
+                let import_val = match get_val(field) {
+                    Some(v) => v,
+                    None => continue, // no value in import → skip (don't overwrite with blank)
+                };
+                let current_val: String = conn
+                    .query_row(
+                        &format!("SELECT COALESCE({}, '') FROM clients WHERE id = ?1", field),
+                        rusqlite::params![client_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or_default();
+
+                if import_val.trim() != current_val.trim() {
+                    diffs.push(FieldDiff {
+                        field: field.to_string(),
+                        old_value: current_val,
+                        new_value: import_val,
+                    });
+                }
+            }
+
+            if diffs.is_empty() {
+                skipped.push(PreviewSkipped {
+                    row_index: i,
+                    name: client_name,
+                    reason: "No changes".to_string(),
+                });
+            } else {
+                updates.push(PreviewUpdate {
+                    row_index: i,
+                    client_id,
+                    name: client_name,
+                    diffs,
+                });
+            }
+        } else {
+            inserts.push(PreviewInsert {
+                row_index: i,
+                name: client_name,
+            });
+        }
+    }
+
+    Ok(ImportPreview {
+        inserts,
+        updates,
+        skipped,
+        errors: Vec::new(), // errors come from validation, merged by the command layer
+    })
+}
+
 /// Execute the actual import - insert/update clients
 pub fn execute_import(
     conn: &Connection,
@@ -485,6 +626,8 @@ pub fn execute_import(
     headers: &[String],
     mapping: &HashMap<String, String>,
     constant_values: &HashMap<String, String>,
+    approved_updates: Option<&HashMap<String, Vec<String>>>,
+    approved_inserts: Option<&Vec<usize>>,
 ) -> Result<ImportResult, AppError> {
     let mut inserted = 0usize;
     let mut updated = 0usize;
@@ -496,7 +639,7 @@ pub fn execute_import(
     let mut error_details = Vec::new();
 
     for (i, row) in rows.iter().enumerate() {
-        match import_single_row(conn, row, headers, mapping, constant_values) {
+        match import_single_row(conn, row, i, headers, mapping, constant_values, approved_updates, approved_inserts) {
             Ok(action) => match action {
                 ImportAction::Inserted { name } => {
                     inserted += 1;
@@ -544,9 +687,12 @@ enum ImportAction {
 fn import_single_row(
     conn: &Connection,
     row: &[String],
+    row_index: usize,
     headers: &[String],
     mapping: &HashMap<String, String>,
     constant_values: &HashMap<String, String>,
+    approved_updates: Option<&HashMap<String, Vec<String>>>,
+    approved_inserts: Option<&Vec<usize>>,
 ) -> Result<ImportAction, AppError> {
     let get_val = |target: &str| -> Option<String> {
         // Try column mapping first
@@ -566,58 +712,43 @@ fn import_single_row(
         get_val("last_name").ok_or_else(|| AppError::Import("Missing last name".into()))?;
     let mbi = get_val("mbi");
 
-    // Try to find existing client by MBI first, then by name+DOB, then by name alone
-    let existing_id: Option<String> = if let Some(ref mbi_val) = mbi {
-        conn.query_row(
-            "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
-            rusqlite::params![mbi_val],
-            |row| row.get(0),
-        )
-        .ok()
-    } else {
-        None
-    }
-    .or_else(|| {
-        let dob = get_val("dob");
-        if let Some(ref dob_val) = dob {
-            conn.query_row(
-                "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
-                rusqlite::params![first_name, last_name, dob_val],
-                |row| row.get(0),
-            )
-            .ok()
-        } else {
-            None
-        }
-    })
-    .or_else(|| {
-        // Name-only fallback: match if exactly one active client has this name
-        let mut stmt = conn.prepare(
-            "SELECT id FROM clients WHERE LOWER(first_name) = LOWER(?1) AND LOWER(last_name) = LOWER(?2) AND is_active = 1"
-        ).ok()?;
-        let ids: Vec<String> = stmt.query_map(
-            rusqlite::params![first_name, last_name],
-            |row| row.get(0),
-        ).ok()?.filter_map(|r| r.ok()).collect();
-        if ids.len() == 1 {
-            Some(ids.into_iter().next().unwrap())
-        } else {
-            None // 0 or 2+ matches — don't guess
-        }
-    });
+    let existing_id = find_existing_client(conn, &first_name, &last_name, &mbi, &get_val);
 
     let client_name = format!("{} {}", first_name, last_name);
 
     if let Some(client_id) = existing_id {
+        // If approved_updates is provided, check if this client was approved
+        if let Some(approved) = approved_updates {
+            match approved.get(&client_id) {
+                None => return Ok(ImportAction::Skipped { name: client_name }),
+                Some(approved_fields) if approved_fields.is_empty() => {
+                    return Ok(ImportAction::Skipped { name: client_name });
+                }
+                _ => {}
+            }
+        }
         // Update existing client
         let mut sets = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         let mut idx = 1;
         let mut updated_fields = Vec::new();
 
+        // Get the approved field list for this client (if approval filtering is active)
+        let approved_field_list: Option<&Vec<String>> =
+            approved_updates.and_then(|a| a.get(&client_id));
+
         macro_rules! set_if {
             ($field:expr, $col:expr) => {
-                if let Some(val) = get_val($field) {
+                if let Some(ref list) = approved_field_list {
+                    if !list.iter().any(|f| f == $col) {
+                        // Field not approved — skip
+                    } else if let Some(val) = get_val($field) {
+                        sets.push(format!("{} = ?{}", $col, idx));
+                        params.push(Box::new(val));
+                        idx += 1;
+                        updated_fields.push($col.to_string());
+                    }
+                } else if let Some(val) = get_val($field) {
                     sets.push(format!("{} = ?{}", $col, idx));
                     params.push(Box::new(val));
                     idx += 1;
@@ -648,11 +779,30 @@ fn import_single_row(
             sets.join(", "),
             idx
         );
-        params.push(Box::new(client_id));
+        params.push(Box::new(client_id.clone()));
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         conn.execute(&sql, refs.as_slice())?;
+
+        let event_data = serde_json::json!({
+            "source": "file_import",
+            "fields": updated_fields,
+        })
+        .to_string();
+        let _ = conversation_service::create_system_event(
+            conn,
+            &client_id,
+            "CLIENT_UPDATED",
+            Some(&event_data),
+        );
+
         Ok(ImportAction::Updated { name: client_name, fields: updated_fields })
     } else {
+        // If approved_inserts is provided, check if this row was approved
+        if let Some(approved) = approved_inserts {
+            if !approved.contains(&row_index) {
+                return Ok(ImportAction::Skipped { name: client_name });
+            }
+        }
         // Insert new client
         let id = Uuid::new_v4().to_string();
         conn.execute(
@@ -683,7 +833,65 @@ fn import_single_row(
                 get_val("notes")
             ],
         )?;
+
+        let event_data = serde_json::json!({
+            "source": "file_import",
+        })
+        .to_string();
+        let _ = conversation_service::create_system_event(
+            conn,
+            &id,
+            "CLIENT_IMPORTED",
+            Some(&event_data),
+        );
+
         Ok(ImportAction::Inserted { name: client_name })
+    }
+}
+
+/// Find an existing client by MBI → name+DOB → name-only cascade
+fn find_existing_client(
+    conn: &Connection,
+    first_name: &str,
+    last_name: &str,
+    mbi: &Option<String>,
+    get_val: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    // 1. Try MBI
+    if let Some(ref mbi_val) = mbi {
+        if let Ok(id) = conn.query_row(
+            "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
+            rusqlite::params![mbi_val],
+            |row| row.get::<_, String>(0),
+        ) {
+            return Some(id);
+        }
+    }
+
+    // 2. Try name + DOB
+    if let Some(dob_val) = get_val("dob") {
+        if let Ok(id) = conn.query_row(
+            "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
+            rusqlite::params![first_name, last_name, dob_val],
+            |row| row.get::<_, String>(0),
+        ) {
+            return Some(id);
+        }
+    }
+
+    // 3. Name-only fallback: match if exactly one active client
+    let mut stmt = conn.prepare(
+        "SELECT id FROM clients WHERE LOWER(first_name) = LOWER(?1) AND LOWER(last_name) = LOWER(?2) AND is_active = 1"
+    ).ok()?;
+    let ids: Vec<String> = stmt
+        .query_map(rusqlite::params![first_name, last_name], |row| row.get(0))
+        .ok()?
+        .filter_map(|r| r.ok())
+        .collect();
+    if ids.len() == 1 {
+        Some(ids.into_iter().next().unwrap())
+    } else {
+        None
     }
 }
 

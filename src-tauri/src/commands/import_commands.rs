@@ -33,10 +33,42 @@ pub fn validate_import(
 }
 
 #[tauri::command]
+pub fn preview_import(
+    file_path: String,
+    column_mapping: HashMap<String, String>,
+    constant_values: Option<HashMap<String, String>>,
+    state: State<'_, DbState>,
+) -> Result<serde_json::Value, String> {
+    let constant_values = constant_values.unwrap_or_default();
+    let (headers, all_rows) =
+        import_service::get_all_rows(&file_path).map_err(|e| e.to_string())?;
+
+    let validation = import_service::validate_rows(&all_rows, &headers, &column_mapping);
+
+    state
+        .with_conn(|conn| {
+            let mut preview = import_service::preview_import(
+                conn,
+                &validation.valid_rows,
+                &headers,
+                &column_mapping,
+                &constant_values,
+            )?;
+            preview.errors = validation.error_rows;
+
+            serde_json::to_value(&preview)
+                .map_err(|e| crate::error::AppError::Import(e.to_string()))
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn execute_import(
     file_path: String,
     column_mapping: HashMap<String, String>,
     constant_values: Option<HashMap<String, String>>,
+    approved_updates: Option<HashMap<String, Vec<String>>>,
+    approved_inserts: Option<Vec<usize>>,
     state: State<'_, DbState>,
 ) -> Result<serde_json::Value, String> {
     let constant_values = constant_values.unwrap_or_default();
@@ -54,6 +86,8 @@ pub fn execute_import(
                 &headers,
                 &column_mapping,
                 &constant_values,
+                approved_updates.as_ref(),
+                approved_inserts.as_ref(),
             )?;
 
             // Log the import

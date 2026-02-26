@@ -68,6 +68,7 @@ pub fn run() {
             commands::get_carriers,
             commands::parse_import_file,
             commands::validate_import,
+            commands::preview_import,
             commands::execute_import,
             commands::import_call_log,
             commands::import_integrity,

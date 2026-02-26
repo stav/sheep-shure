@@ -8,8 +8,9 @@ mod leadsmaster;
 // Re-export all public types and functions at the module level
 // so existing `import_service::` paths continue to work.
 pub use file_import::{
-    parse_file, auto_map_columns, validate_rows, execute_import, get_all_rows,
+    parse_file, auto_map_columns, validate_rows, execute_import, preview_import, get_all_rows,
     ParsedFile, ValidationResult, ErrorRow, ImportRowDetail, ImportResult,
+    ImportPreview, PreviewInsert, PreviewUpdate, PreviewSkipped, FieldDiff,
 };
 pub use call_log::{import_call_log_from_db, ActivityImportResult};
 pub use integrity::import_integrity_from_json;
