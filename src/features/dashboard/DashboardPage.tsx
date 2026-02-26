@@ -10,6 +10,17 @@ import type { DashboardStats } from "@/types";
 
 const COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16"];
 
+// Brand colors for each carrier (keyed by short_name or name, case-insensitive)
+const CARRIER_COLORS: Record<string, string> = {
+  caresource:   "#A05EB5", // purple
+  devoted:      "#FF4F00", // orange
+  uhc:          "#002677", // navy blue
+  medmutual:    "#00857D", // teal
+  humana:       "#5EA908", // green
+  anthem:       "#1A3673", // deep blue
+  "no carrier": "#6B7280", // gray
+};
+
 function useDashboardStats() {
   return useQuery({
     queryKey: ["dashboard-stats"],
@@ -127,9 +138,10 @@ export function DashboardPage() {
                     label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   >
                     {carrierData.map((entry, index) => {
-                      const color = entry.name === "No Carrier" ? "#6B7280"
-                        : entry.name.toLowerCase().includes("caresource") ? "#8B5CF6"
-                        : COLORS[index % COLORS.length];
+                      const key = entry.name.toLowerCase();
+                      const color = Object.entries(CARRIER_COLORS).find(
+                        ([k]) => key.includes(k)
+                      )?.[1] ?? COLORS[index % COLORS.length];
                       return <Cell key={index} fill={color} />;
                     })}
                   </Pie>
