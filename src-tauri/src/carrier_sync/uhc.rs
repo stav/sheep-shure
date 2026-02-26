@@ -141,7 +141,7 @@ window.__compassFetchUhc = async function(silent) {
             } catch (e) {}
         }
 
-        if (!partyID || !opd) {
+        if (!partyID) {
             if (silent) return;
             const debug = {
                 captured: { partyID: partyID || null, opd: opd || null },
@@ -159,7 +159,7 @@ window.__compassFetchUhc = async function(silent) {
         const hasPrincipal = window.__compass_uhc_hasPrincipal || 'false';
         const url = '/JarvisMemberProfileAPI/azure/api/secure/bookOfBusiness/details/v1' +
             '?hasPrincipalOrCorp=' + encodeURIComponent(hasPrincipal) +
-            '&opd=' + encodeURIComponent(opd) +
+            '&opd=' + encodeURIComponent(opd || '') +
             '&homePage=false';
 
         const resp = await fetch(url, {
@@ -192,7 +192,18 @@ window.__compassFetchUhc = async function(silent) {
             throw new Error('API returned ' + resp.status + ': ' + text.substring(0, 300));
         }
 
-        const data = await resp.json();
+        const respText = await resp.text();
+        var data;
+        try {
+            data = JSON.parse(respText);
+        } catch (parseErr) {
+            if (silent) return;
+            throw new Error(
+                'API returned non-JSON response (possible session issue). ' +
+                'Try closing this window, re-opening the portal, and syncing again. ' +
+                'Response preview: ' + respText.substring(0, 200)
+            );
+        }
         if (data.errors && data.errors.length > 0) {
             if (silent) return;
             throw new Error('API errors: ' + data.errors.join('; '));
@@ -235,50 +246,77 @@ window.__compassFetchUhc = async function(silent) {
         }
     }
 };
+
+// Fallback: if the fetch/XHR interceptor didn't trigger auto-fetch
+// (e.g. zone.js overwrote our patches), retry periodically after load.
+window.addEventListener('load', () => {
+    var attempts = 0;
+    var retryIv = setInterval(() => {
+        if (window.__compassBobFetched || attempts >= 6) {
+            clearInterval(retryIv);
+            return;
+        }
+        attempts++;
+        if (window.__compassFetchUhc) {
+            window.__compassFetchUhc(true);
+        }
+    }, 5000);
+});
 "#;
 
 /// Auto-login script: fills and submits the UHC/Jarvis login form.
+/// Handles multi-step login (username + Continue → password + Sign In).
 const AUTO_LOGIN_SCRIPT: &str = r#"
 (function() {
     if (!window.__compass_creds) return;
+    var usernameFilled = false;
+    // Find a clickable button by type="submit" or by text content
+    function findButton() {
+        var btn = document.querySelector('input[type="submit"], button[type="submit"]');
+        if (btn) return btn;
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+            var text = buttons[i].textContent.trim().toLowerCase();
+            if (text === 'continue' || text === 'sign in' || text === 'log in' || text === 'next') {
+                return buttons[i];
+            }
+        }
+        return null;
+    }
     function tryLogin() {
-        var userField = document.querySelector('input[name="loginfmt"], input[name="username"], input[type="email"]');
-        var passField = document.querySelector('input[name="passwd"], input[name="password"], input[type="password"]');
-        // Azure AD may show username first, then password on next screen
-        if (userField && !passField) {
-            var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        var passField = document.querySelector('input[type="password"]');
+        var userField = document.querySelector('input[type="text"], input[type="email"]');
+        var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        // Step 1: username visible, no password yet
+        if (userField && !passField && !usernameFilled) {
             nativeSet.call(userField, window.__compass_creds.username);
             userField.dispatchEvent(new Event('input', { bubbles: true }));
             userField.dispatchEvent(new Event('change', { bubbles: true }));
-            var nextBtn = document.querySelector('input[type="submit"], button[type="submit"]');
+            usernameFilled = true;
+            var nextBtn = findButton();
             if (nextBtn) nextBtn.click();
-            return false; // keep polling for password field
+            return false; // keep polling for password screen
         }
-        if (!userField && passField) {
-            var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        // Step 2: password visible
+        if (passField) {
             nativeSet.call(passField, window.__compass_creds.password);
             passField.dispatchEvent(new Event('input', { bubbles: true }));
             passField.dispatchEvent(new Event('change', { bubbles: true }));
-            var submit = document.querySelector('input[type="submit"], button[type="submit"]');
+            if (userField && !usernameFilled) {
+                nativeSet.call(userField, window.__compass_creds.username);
+                userField.dispatchEvent(new Event('input', { bubbles: true }));
+                userField.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            var submit = findButton();
             if (submit) { submit.click(); return true; }
-            return false;
-        }
-        if (userField && passField) {
-            var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-            nativeSet.call(userField, window.__compass_creds.username);
-            userField.dispatchEvent(new Event('input', { bubbles: true }));
-            userField.dispatchEvent(new Event('change', { bubbles: true }));
-            nativeSet.call(passField, window.__compass_creds.password);
-            passField.dispatchEvent(new Event('input', { bubbles: true }));
-            passField.dispatchEvent(new Event('change', { bubbles: true }));
-            var submit = document.querySelector('input[type="submit"], button[type="submit"]');
-            if (submit) { submit.click(); return true; }
-            return false;
         }
         return false;
     }
-    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
-    setTimeout(function() { clearInterval(iv); }, 15000);
+    // Delay before polling to let SSO redirects complete naturally
+    setTimeout(function() {
+        var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+        setTimeout(function() { clearInterval(iv); }, 15000);
+    }, 2000);
 })();
 "#;
 

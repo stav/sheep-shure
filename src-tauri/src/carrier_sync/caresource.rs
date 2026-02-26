@@ -14,9 +14,13 @@ const AUTO_LOGIN_SCRIPT: &str = r#"
 (function() {
     if (!window.__compass_creds) return;
     function tryLogin() {
-        var userField = document.querySelector('input[name="username"], input[name="j_username"], input[name="email"], input[type="email"], input[type="text"][id*="user"], input[type="text"][id*="email"]');
-        var passField = document.querySelector('input[name="password"], input[name="j_password"], input[type="password"]');
-        if (!userField || !passField) return false;
+        var passField = document.querySelector('input[type="password"]');
+        if (!passField) return false;
+        var form = passField.closest('form');
+        var userField = form
+            ? form.querySelector('input[type="text"], input[type="email"]')
+            : document.querySelector('input[type="text"], input[type="email"]');
+        if (!userField) return false;
         var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
         nativeSet.call(userField, window.__compass_creds.username);
         userField.dispatchEvent(new Event('input', { bubbles: true }));
@@ -24,12 +28,17 @@ const AUTO_LOGIN_SCRIPT: &str = r#"
         nativeSet.call(passField, window.__compass_creds.password);
         passField.dispatchEvent(new Event('input', { bubbles: true }));
         passField.dispatchEvent(new Event('change', { bubbles: true }));
-        var submit = document.querySelector('button[type="submit"], input[type="submit"], button[id*="login"], button[id*="Login"]');
+        var submit = form
+            ? (form.querySelector('button[type="submit"], input[type="submit"]') || form.querySelector('button'))
+            : document.querySelector('button[type="submit"], input[type="submit"]');
         if (submit) { submit.click(); return true; }
         return false;
     }
-    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
-    setTimeout(function() { clearInterval(iv); }, 15000);
+    // Delay before polling to let SSO redirects complete naturally
+    setTimeout(function() {
+        var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+        setTimeout(function() { clearInterval(iv); }, 15000);
+    }, 2000);
 })();
 "#;
 

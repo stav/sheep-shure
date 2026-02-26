@@ -216,15 +216,19 @@ window.__compassFetchDevoted = async function(silent) {
 };
 "#;
 
-/// Auto-login script: fills and submits the Devoted login form.
-/// Devoted uses an Okta-based login with email + password fields.
+/// Auto-login script: fills and submits the Devoted login form (Okta-based).
+/// Delays 2s before polling to let SSO redirects complete when cookies are valid.
 const AUTO_LOGIN_SCRIPT: &str = r#"
 (function() {
     if (!window.__compass_creds) return;
     function tryLogin() {
-        var userField = document.querySelector('input[name="identifier"], input[name="username"], input[type="email"]');
-        var passField = document.querySelector('input[name="credentials.passcode"], input[name="password"], input[type="password"]');
-        if (!userField || !passField) return false;
+        var passField = document.querySelector('input[type="password"]');
+        if (!passField) return false;
+        var form = passField.closest('form');
+        var userField = form
+            ? form.querySelector('input[type="text"], input[type="email"], input[name="identifier"]')
+            : document.querySelector('input[type="text"], input[type="email"], input[name="identifier"]');
+        if (!userField) return false;
         var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
         nativeSet.call(userField, window.__compass_creds.username);
         userField.dispatchEvent(new Event('input', { bubbles: true }));
@@ -232,12 +236,17 @@ const AUTO_LOGIN_SCRIPT: &str = r#"
         nativeSet.call(passField, window.__compass_creds.password);
         passField.dispatchEvent(new Event('input', { bubbles: true }));
         passField.dispatchEvent(new Event('change', { bubbles: true }));
-        var submit = document.querySelector('input[type="submit"], button[type="submit"]');
+        var submit = form
+            ? (form.querySelector('input[type="submit"], button[type="submit"]') || form.querySelector('button'))
+            : document.querySelector('input[type="submit"], button[type="submit"]');
         if (submit) { submit.click(); return true; }
         return false;
     }
-    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
-    setTimeout(function() { clearInterval(iv); }, 15000);
+    // Delay before polling to let SSO redirects complete naturally
+    setTimeout(function() {
+        var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+        setTimeout(function() { clearInterval(iv); }, 15000);
+    }, 2000);
 })();
 "#;
 

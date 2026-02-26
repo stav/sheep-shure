@@ -138,7 +138,7 @@ export function CarrierSyncPage() {
             <CardDescription>{getDescription()}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Auto-fetch carriers: show spinner during login, hide Sync Now button */}
+            {/* Auto-fetch carriers: show spinner during login */}
             {isAutoFetch && syncPhase === "login" && !lastResult && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -146,24 +146,22 @@ export function CarrierSyncPage() {
               </div>
             )}
 
-            {/* Always show Sync Now for manual carriers, or as re-sync for auto carriers */}
-            {(!isAutoFetch || syncPhase !== "login") && (
-              <Button
-                onClick={handleTriggerSync}
-                disabled={syncPhase === "fetching" || syncPhase === "processing"}
-              >
-                {syncPhase === "fetching" || syncPhase === "processing" ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRightLeft className="mr-2 h-4 w-4" />
-                )}
-                {syncPhase === "fetching"
-                  ? "Fetching from portal..."
-                  : syncPhase === "processing"
-                    ? "Processing..."
-                    : "Sync Now"}
-              </Button>
-            )}
+            {/* Always show Sync Now as a manual fallback */}
+            <Button
+              onClick={handleTriggerSync}
+              disabled={syncPhase === "fetching" || syncPhase === "processing"}
+            >
+              {syncPhase === "fetching" || syncPhase === "processing" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+              )}
+              {syncPhase === "fetching"
+                ? "Fetching from portal..."
+                : syncPhase === "processing"
+                  ? "Processing..."
+                  : "Sync Now"}
+            </Button>
 
             {syncError && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
