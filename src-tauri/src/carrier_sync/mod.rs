@@ -28,6 +28,12 @@ pub trait CarrierPortal: Send + Sync {
         ""
     }
 
+    /// JS to auto-fill and submit the login form using window.__compass_creds.
+    /// Default is empty (carrier doesn't support auto-login yet).
+    fn auto_login_script(&self) -> &str {
+        ""
+    }
+
     /// JS code to inject into the webview after the user has logged in.
     /// The script should fetch member data from the portal API and then navigate to:
     ///   `http://compass-sync.localhost/data?members=<encodeURIComponent(JSON)>`

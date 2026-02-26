@@ -9,6 +9,30 @@ pub struct CareSourcePortal;
 
 const LOGIN_URL: &str = "https://acprodcmsl-prod-producerportal-approuter.cfapps.us10.hana.ondemand.com/cp.portal/site";
 
+/// Auto-login script: fills and submits the CareSource login form.
+const AUTO_LOGIN_SCRIPT: &str = r#"
+(function() {
+    if (!window.__compass_creds) return;
+    function tryLogin() {
+        var userField = document.querySelector('input[name="username"], input[name="j_username"], input[name="email"], input[type="email"], input[type="text"][id*="user"], input[type="text"][id*="email"]');
+        var passField = document.querySelector('input[name="password"], input[name="j_password"], input[type="password"]');
+        if (!userField || !passField) return false;
+        var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nativeSet.call(userField, window.__compass_creds.username);
+        userField.dispatchEvent(new Event('input', { bubbles: true }));
+        userField.dispatchEvent(new Event('change', { bubbles: true }));
+        nativeSet.call(passField, window.__compass_creds.password);
+        passField.dispatchEvent(new Event('input', { bubbles: true }));
+        passField.dispatchEvent(new Event('change', { bubbles: true }));
+        var submit = document.querySelector('button[type="submit"], input[type="submit"], button[id*="login"], button[id*="Login"]');
+        if (submit) { submit.click(); return true; }
+        return false;
+    }
+    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+    setTimeout(function() { clearInterval(iv); }, 15000);
+})();
+"#;
+
 /// Scrape the Active Book of Business from the SAP UI5 producer portal.
 ///
 /// The portal renders a sap.m.Table (class sapMListTbl / sapMList) with:
@@ -173,6 +197,10 @@ impl CarrierPortal for CareSourcePortal {
 
     fn fetch_script(&self) -> &str {
         FETCH_SCRIPT
+    }
+
+    fn auto_login_script(&self) -> &str {
+        AUTO_LOGIN_SCRIPT
     }
 
     fn sync_instruction(&self) -> &str {

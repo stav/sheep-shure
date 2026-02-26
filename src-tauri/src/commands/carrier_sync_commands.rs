@@ -2,12 +2,17 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl
 
 use crate::carrier_sync;
 use crate::db::DbState;
-use crate::models::{CarrierSyncInfo, ConfirmDisenrollmentResult, ImportPortalResult, PortalMember, SyncLogEntry, SyncResult};
+use crate::models::{CarrierSyncInfo, ConfirmDisenrollmentResult, ImportPortalResult, PortalCredentials, PortalMember, SyncLogEntry, SyncResult};
 
 /// Open a webview window to the carrier's login portal.
 /// Sets up a navigation interceptor to catch sync results from injected JS.
+/// If saved credentials exist, injects auto-login script.
 #[tauri::command]
-pub async fn open_carrier_login(app: AppHandle, carrier_id: String) -> Result<String, String> {
+pub async fn open_carrier_login(
+    app: AppHandle,
+    carrier_id: String,
+    state: State<'_, DbState>,
+) -> Result<String, String> {
     let portal = carrier_sync::get_portal(&carrier_id)
         .ok_or_else(|| format!("No portal integration for carrier: {}", carrier_id))?;
 
@@ -31,12 +36,58 @@ pub async fn open_carrier_login(app: AppHandle, carrier_id: String) -> Result<St
         existing.close().map_err(|e| e.to_string())?;
     }
 
-    let init_script = portal.init_script().to_string();
+    // Look up saved credentials
+    let creds_key = format!("portal_creds_{}", carrier_id);
+    let saved_creds: Option<PortalCredentials> = state
+        .with_conn(|conn| {
+            let result: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = ?1",
+                    rusqlite::params![creds_key],
+                    |row| row.get(0),
+                )
+                .ok();
+            match result {
+                Some(json_str) => {
+                    let creds: PortalCredentials = serde_json::from_str(&json_str)
+                        .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+                    Ok(Some(creds))
+                }
+                None => Ok(None),
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    // Build combined initialization script
+    let mut combined_script = String::new();
+
+    if let Some(ref creds) = saved_creds {
+        // Inject credentials as a JS object (JSON-escaped for safety)
+        let creds_json = serde_json::json!({
+            "username": creds.username,
+            "password": creds.password,
+        });
+        combined_script.push_str(&format!(
+            "window.__compass_creds = {};\n",
+            creds_json
+        ));
+    }
+
+    combined_script.push_str(portal.init_script());
+
+    if saved_creds.is_some() {
+        let auto_login = portal.auto_login_script();
+        if !auto_login.is_empty() {
+            combined_script.push('\n');
+            combined_script.push_str(auto_login);
+        }
+    }
+
     let app_handle = app.clone();
     WebviewWindowBuilder::new(&app, "carrier-login", WebviewUrl::External(url.parse().unwrap()))
         .title(format!("{} Login", portal.carrier_name()))
         .inner_size(1200.0, 800.0)
-        .initialization_script(&init_script)
+        .initialization_script(&combined_script)
         .on_navigation(move |nav_url| {
             let host = nav_url.host_str().unwrap_or("");
             if host == "compass-sync.localhost" {
@@ -168,6 +219,100 @@ pub fn get_sync_logs(
     state
         .with_conn(|conn| {
             crate::services::carrier_sync_service::get_sync_logs(conn, carrier_id.as_deref())
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Save portal credentials for a carrier (stored in app_settings).
+#[tauri::command]
+pub fn save_portal_credentials(
+    carrier_id: String,
+    username: String,
+    password: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let key = format!("portal_creds_{}", carrier_id);
+    let value = serde_json::json!({ "username": username, "password": password }).to_string();
+    state
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now')",
+                rusqlite::params![key, value],
+            )
+            .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Get saved portal credentials for a carrier.
+#[tauri::command]
+pub fn get_portal_credentials(
+    carrier_id: String,
+    state: State<'_, DbState>,
+) -> Result<Option<PortalCredentials>, String> {
+    let key = format!("portal_creds_{}", carrier_id);
+    state
+        .with_conn(|conn| {
+            let result: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = ?1",
+                    rusqlite::params![key],
+                    |row| row.get(0),
+                )
+                .ok();
+            match result {
+                Some(json_str) => {
+                    let creds: PortalCredentials = serde_json::from_str(&json_str)
+                        .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+                    Ok(Some(creds))
+                }
+                None => Ok(None),
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Delete saved portal credentials for a carrier.
+#[tauri::command]
+pub fn delete_portal_credentials(
+    carrier_id: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    let key = format!("portal_creds_{}", carrier_id);
+    state
+        .with_conn(|conn| {
+            conn.execute(
+                "DELETE FROM app_settings WHERE key = ?1",
+                rusqlite::params![key],
+            )
+            .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+            Ok(())
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Get list of carrier IDs that have saved credentials.
+#[tauri::command]
+pub fn get_carriers_with_credentials(
+    state: State<'_, DbState>,
+) -> Result<Vec<String>, String> {
+    state
+        .with_conn(|conn| {
+            let mut stmt = conn
+                .prepare("SELECT key FROM app_settings WHERE key LIKE 'portal_creds_%'")
+                .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+            let mut carrier_ids = Vec::new();
+            for row in rows {
+                let key = row.map_err(|e| crate::error::AppError::Database(e.to_string()))?;
+                if let Some(id) = key.strip_prefix("portal_creds_") {
+                    carrier_ids.push(id.to_string());
+                }
+            }
+            Ok(carrier_ids)
         })
         .map_err(|e| e.to_string())
 }

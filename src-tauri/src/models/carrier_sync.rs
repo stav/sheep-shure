@@ -82,6 +82,13 @@ pub struct CarrierSyncInfo {
     pub sync_instruction: String,
 }
 
+/// Saved portal credentials for auto-login.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortalCredentials {
+    pub username: String,
+    pub password: String,
+}
+
 /// Summary log entry for a completed sync operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncLogEntry {

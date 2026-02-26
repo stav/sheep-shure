@@ -94,6 +94,10 @@ pub fn run() {
             commands::confirm_disenrollments,
             commands::get_sync_logs,
             commands::update_carrier_expected_active,
+            commands::save_portal_credentials,
+            commands::get_portal_credentials,
+            commands::delete_portal_credentials,
+            commands::get_carriers_with_credentials,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Compass application");

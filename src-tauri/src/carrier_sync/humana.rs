@@ -9,6 +9,30 @@ pub struct HumanaPortal;
 
 const LOGIN_URL: &str = "https://agentportal.humana.com/Vantage/apps/index.html?agenthome=-1#!/";
 
+/// Auto-login script: fills and submits the Humana/Vantage login form.
+const AUTO_LOGIN_SCRIPT: &str = r#"
+(function() {
+    if (!window.__compass_creds) return;
+    function tryLogin() {
+        var userField = document.querySelector('input[name="username"], input[name="userid"], input[type="text"][id*="user"], input[type="email"]');
+        var passField = document.querySelector('input[name="password"], input[type="password"]');
+        if (!userField || !passField) return false;
+        var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nativeSet.call(userField, window.__compass_creds.username);
+        userField.dispatchEvent(new Event('input', { bubbles: true }));
+        userField.dispatchEvent(new Event('change', { bubbles: true }));
+        nativeSet.call(passField, window.__compass_creds.password);
+        passField.dispatchEvent(new Event('input', { bubbles: true }));
+        passField.dispatchEvent(new Event('change', { bubbles: true }));
+        var submit = document.querySelector('button[type="submit"], input[type="submit"], button[id*="login"], button[id*="Login"]');
+        if (submit) { submit.click(); return true; }
+        return false;
+    }
+    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+    setTimeout(function() { clearInterval(iv); }, 15000);
+})();
+"#;
+
 /// Scrape the Humana Vantage "My Humana Business" table at #!/businessCenter.
 /// The table columns are:
 ///   0:Name  1:Type  2:Coverage Type  3:Plan Type  4:Sales Product
@@ -257,6 +281,10 @@ impl CarrierPortal for HumanaPortal {
 
     fn fetch_script(&self) -> &str {
         FETCH_SCRIPT
+    }
+
+    fn auto_login_script(&self) -> &str {
+        AUTO_LOGIN_SCRIPT
     }
 
     fn sync_instruction(&self) -> &str {

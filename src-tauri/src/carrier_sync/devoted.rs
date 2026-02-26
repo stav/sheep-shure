@@ -216,6 +216,31 @@ window.__compassFetchDevoted = async function(silent) {
 };
 "#;
 
+/// Auto-login script: fills and submits the Devoted login form.
+/// Devoted uses an Okta-based login with email + password fields.
+const AUTO_LOGIN_SCRIPT: &str = r#"
+(function() {
+    if (!window.__compass_creds) return;
+    function tryLogin() {
+        var userField = document.querySelector('input[name="identifier"], input[name="username"], input[type="email"]');
+        var passField = document.querySelector('input[name="credentials.passcode"], input[name="password"], input[type="password"]');
+        if (!userField || !passField) return false;
+        var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        nativeSet.call(userField, window.__compass_creds.username);
+        userField.dispatchEvent(new Event('input', { bubbles: true }));
+        userField.dispatchEvent(new Event('change', { bubbles: true }));
+        nativeSet.call(passField, window.__compass_creds.password);
+        passField.dispatchEvent(new Event('input', { bubbles: true }));
+        passField.dispatchEvent(new Event('change', { bubbles: true }));
+        var submit = document.querySelector('input[type="submit"], button[type="submit"]');
+        if (submit) { submit.click(); return true; }
+        return false;
+    }
+    var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
+    setTimeout(function() { clearInterval(iv); }, 15000);
+})();
+"#;
+
 /// Manual fetch script: resets flag and runs with error reporting.
 const FETCH_SCRIPT: &str = r#"
 window.__compassBobFetched = false;
@@ -333,6 +358,10 @@ impl CarrierPortal for DevotedPortal {
 
     fn fetch_script(&self) -> &str {
         FETCH_SCRIPT
+    }
+
+    fn auto_login_script(&self) -> &str {
+        AUTO_LOGIN_SCRIPT
     }
 
     fn auto_fetch(&self) -> bool {

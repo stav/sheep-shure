@@ -118,3 +118,58 @@ export function useSyncLogs(carrierId?: string) {
       }),
   });
 }
+
+export function useSavePortalCredentials() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      carrierId,
+      username,
+      password,
+    }: {
+      carrierId: string;
+      username: string;
+      password: string;
+    }) =>
+      tauriInvoke<void>("save_portal_credentials", {
+        carrierId,
+        username,
+        password,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["carriers-with-credentials"] });
+    },
+  });
+}
+
+export function useGetPortalCredentials(carrierId: string | null) {
+  return useQuery({
+    queryKey: ["portal-credentials", carrierId],
+    queryFn: () =>
+      tauriInvoke<{ username: string; password: string } | null>(
+        "get_portal_credentials",
+        { carrierId: carrierId! }
+      ),
+    enabled: !!carrierId,
+  });
+}
+
+export function useDeletePortalCredentials() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (carrierId: string) =>
+      tauriInvoke<void>("delete_portal_credentials", { carrierId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["carriers-with-credentials"] });
+      queryClient.invalidateQueries({ queryKey: ["portal-credentials"] });
+    },
+  });
+}
+
+export function useCarriersWithCredentials() {
+  return useQuery({
+    queryKey: ["carriers-with-credentials"],
+    queryFn: () =>
+      tauriInvoke<string[]>("get_carriers_with_credentials"),
+  });
+}
