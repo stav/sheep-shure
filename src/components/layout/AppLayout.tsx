@@ -33,6 +33,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { CommandPalette } from "./CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useZoom } from "@/hooks/useZoom";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -76,6 +77,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const pageTitle = getPageTitle(location.pathname);
   useKeyboardShortcuts();
+  const { browserZoom, wmZoom, resetAll } = useZoom();
 
   // Clear subtitle on route changes so stale subtitles don't persist
   useEffect(() => {
@@ -291,6 +293,22 @@ export function AppLayout() {
                 <span className="text-sm text-muted-foreground">{pageSubtitle}</span>
               )}
             </div>
+            {(browserZoom !== 1 || wmZoom !== 1) && (
+              <button
+                onClick={resetAll}
+                className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors"
+                title="Click to reset zoom (Ctrl+0 / Ctrl+Shift+0)"
+              >
+                {browserZoom !== 1 && (
+                  <span>{Math.round(browserZoom * 100)}%</span>
+                )}
+                {browserZoom !== 1 && wmZoom !== 1 && <span>&middot;</span>}
+                {wmZoom !== 1 && (
+                  <span>WM {Math.round(wmZoom * 100)}%</span>
+                )}
+              </button>
+            )}
+
             <Button
               variant="outline"
               size="sm"
