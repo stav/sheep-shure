@@ -239,6 +239,7 @@ pub fn import_portal_members(
     members: &[PortalMember],
 ) -> Result<ImportPortalResult, AppError> {
     let mut imported = 0usize;
+    let mut imported_names = Vec::new();
     let mut errors = Vec::new();
 
     for member in members {
@@ -304,14 +305,30 @@ pub fn import_portal_members(
             Some(&event_data),
         );
 
-        let status_code = match (
-            member.status.as_deref().map(|s| s.to_lowercase()),
-            member.policy_status.as_deref().map(|s| s.to_lowercase()),
-        ) {
-            (Some(ref s), _) if s.contains("active") && !s.contains("inactive") => "ACTIVE",
-            (_, Some(ref p)) if p.contains("active") && !p.contains("inactive") => "ACTIVE",
-            _ => "PENDING",
+        let status_code = {
+            let s = member.status.as_deref().unwrap_or("").to_lowercase();
+            let ps = member.policy_status.as_deref().unwrap_or("").to_lowercase();
+            // Explicitly inactive / canceled
+            if ps.contains("inactive") || s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
+                "CANCELLED"
+            // Explicitly active
+            } else if ps.contains("active") || s.contains("active") || s == "enrolled" {
+                "ACTIVE"
+            // Blank status = active (e.g. Medical Mutual)
+            } else if s.trim().is_empty() {
+                "ACTIVE"
+            } else {
+                "PENDING"
+            }
         };
+
+        // If the member is canceled/inactive on the portal, deactivate the client
+        if status_code == "CANCELLED" {
+            let _ = conn.execute(
+                "UPDATE clients SET is_active = 0, updated_at = datetime('now') WHERE id = ?1",
+                params![client_id],
+            );
+        }
 
         let enrollment_input = CreateEnrollmentInput {
             client_id: client_id.clone(),
@@ -333,7 +350,10 @@ pub fn import_portal_members(
         };
 
         match enrollment_service::create_enrollment(conn, &enrollment_input) {
-            Ok(_) => imported += 1,
+            Ok(_) => {
+                imported += 1;
+                imported_names.push(format!("{} {}", member.first_name, member.last_name));
+            }
             Err(e) => {
                 errors.push(format!(
                     "{} {}: enrollment failed — {}",
@@ -358,7 +378,7 @@ pub fn import_portal_members(
         }
     }
 
-    Ok(ImportPortalResult { imported, errors })
+    Ok(ImportPortalResult { imported, imported_names, errors })
 }
 
 /// Confirm disenrollment for selected enrollment IDs.

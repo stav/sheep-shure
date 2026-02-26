@@ -9,32 +9,40 @@ pub struct MedMutualPortal;
 
 const LOGIN_URL: &str = "https://mybrokerlink.com/";
 
-/// Fetch the Book of Business page and parse the server-rendered HTML table.
-/// Works regardless of which page the user is currently on — fetches
-/// /mybusiness/bookofbusiness via AJAX using the browser's session cookies.
-const FETCH_SCRIPT: &str = r#"
-(async () => {
+/// Auto-fetch init script: runs on every page load.
+/// Silently attempts to fetch the BoB — if the user isn't logged in yet,
+/// the request fails and nothing happens. Once they log in and the page
+/// reloads/redirects, it auto-fetches successfully.
+const INIT_SCRIPT: &str = r#"
+window.addEventListener('load', () => {
+    if (window.__compassBobFetched) return;
+    window.__compassFetchBoB(true);
+});
+
+window.__compassFetchBoB = async function(silent) {
     try {
-        // Fetch the BoB page (session cookies sent automatically)
+        if (window.__compassBobFetched) return;
         const resp = await fetch('/mybusiness/bookofbusiness');
-        if (resp.status === 401 || resp.status === 302 || resp.status === 403) {
-            throw new Error('Session expired. Close this window, re-open the portal, log in again, and retry.');
-        }
         if (!resp.ok) {
-            throw new Error('Failed to fetch Book of Business page: HTTP ' + resp.status);
+            if (silent) return;
+            throw new Error(
+                resp.status === 401 || resp.status === 302 || resp.status === 403
+                    ? 'Session expired. Close this window, re-open the portal, log in again, and retry.'
+                    : 'Failed to fetch Book of Business page: HTTP ' + resp.status
+            );
         }
 
         const html = await resp.text();
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const table = doc.querySelector('#member-table');
         if (!table) {
+            if (silent) return;
             throw new Error(
                 'Could not find the member table. ' +
                 'Make sure you are logged in to MyBrokerLink.'
             );
         }
 
-        // Convert MM/DD/YYYY to YYYY-MM-DD
         function toIso(dateStr) {
             if (!dateStr) return null;
             const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -59,7 +67,6 @@ const FETCH_SCRIPT: &str = r#"
             const firstName = parts[0] || '';
             const lastName = parts.slice(1).join(' ') || '';
 
-            // Status: empty = active, "Canceled" button text = canceled
             const statusTd = row.querySelector('td[data-col-name="Attention"]');
             let status = null;
             if (statusTd) {
@@ -84,13 +91,23 @@ const FETCH_SCRIPT: &str = r#"
             });
         }
 
+        window.__compassBobFetched = true;
         window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(members));
     } catch (e) {
-        window.location.href = 'http://compass-sync.localhost/error?message=' +
-            encodeURIComponent(e.toString());
+        if (!silent) {
+            window.location.href = 'http://compass-sync.localhost/error?message=' +
+                encodeURIComponent(e.toString());
+        }
     }
-})();
+};
+"#;
+
+/// Manual fetch script: called when user clicks "Sync Now".
+/// Resets the flag and runs with error reporting enabled.
+const FETCH_SCRIPT: &str = r#"
+window.__compassBobFetched = false;
+window.__compassFetchBoB(false);
 "#;
 
 #[async_trait]
@@ -105,6 +122,10 @@ impl CarrierPortal for MedMutualPortal {
 
     fn login_url(&self) -> &str {
         LOGIN_URL
+    }
+
+    fn init_script(&self) -> &str {
+        INIT_SCRIPT
     }
 
     fn fetch_script(&self) -> &str {

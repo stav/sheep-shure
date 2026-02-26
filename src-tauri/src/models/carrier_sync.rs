@@ -64,6 +64,7 @@ pub struct SyncDisenrollment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportPortalResult {
     pub imported: usize,
+    pub imported_names: Vec<String>,
     pub errors: Vec<String>,
 }
 

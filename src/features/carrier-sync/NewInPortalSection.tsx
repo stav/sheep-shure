@@ -54,7 +54,7 @@ export function NewInPortalSection({
           onImported(res, selected);
         },
         onError: (err) => {
-          setImportResult({ imported: 0, errors: [String(err)] });
+          setImportResult({ imported: 0, imported_names: [], errors: [String(err)] });
         },
       }
     );
@@ -94,6 +94,9 @@ export function NewInPortalSection({
         >
           <p className="font-medium">
             Imported {importResult.imported} member{importResult.imported !== 1 ? "s" : ""} successfully.
+            {importResult.imported_names.length > 0 && (
+              <span className="font-normal"> ({importResult.imported_names.join(", ")})</span>
+            )}
           </p>
           {importResult.errors.map((err, i) => (
             <p key={i} className="mt-1 text-destructive">{err}</p>

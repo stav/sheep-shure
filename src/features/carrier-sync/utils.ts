@@ -78,7 +78,12 @@ export function isPortalMemberActive(m: PortalMember): boolean {
     if (ps.includes("inactive")) return false;
     if (ps.includes("active")) return true;
   }
-  // Fall back to status field ("ENROLLED" / "NOT_ENROLLED")
-  const s = (m.status || "").toLowerCase();
-  return s === "enrolled";
+  // Fall back to status field
+  const s = (m.status || "").toLowerCase().trim();
+  // Explicitly inactive statuses
+  if (s.includes("cancel") || s.includes("inactive") || s === "not_enrolled" || s === "terminated") {
+    return false;
+  }
+  // Blank status or "enrolled" = active
+  return true;
 }

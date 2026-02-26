@@ -341,6 +341,7 @@ export interface SyncDisenrollment {
 
 export interface ImportPortalResult {
   imported: number;
+  imported_names: string[];
   errors: string[];
 }
 
