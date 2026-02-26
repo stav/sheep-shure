@@ -34,7 +34,7 @@ export function StatementImportTab() {
     const selected = await open({
       multiple: false,
       filters: [
-        { name: "Spreadsheet", extensions: ["csv", "xlsx", "xls"] },
+        { name: "Spreadsheet", extensions: ["csv", "xlsx", "xls", "txt"] },
       ],
     } as OpenDialogOptions);
     if (selected) {

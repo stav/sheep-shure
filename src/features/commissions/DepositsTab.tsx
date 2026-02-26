@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,6 +30,9 @@ export function DepositsTab() {
   const [editingDeposit, setEditingDeposit] = useState<
     CommissionDepositListItem | undefined
   >();
+  const [duplicateDefaults, setDuplicateDefaults] = useState<
+    CreateCommissionDepositInput | undefined
+  >();
 
   const { data: carriers } = useCarriers();
   const { data: deposits, isLoading } = useCommissionDeposits(
@@ -42,11 +45,26 @@ export function DepositsTab() {
 
   const handleAdd = () => {
     setEditingDeposit(undefined);
+    setDuplicateDefaults(undefined);
     setDialogOpen(true);
   };
 
   const handleEdit = (deposit: CommissionDepositListItem) => {
     setEditingDeposit(deposit);
+    setDuplicateDefaults(undefined);
+    setDialogOpen(true);
+  };
+
+  const handleDuplicate = (deposit: CommissionDepositListItem) => {
+    setEditingDeposit(undefined);
+    setDuplicateDefaults({
+      carrier_id: deposit.carrier_id,
+      deposit_month: deposit.deposit_month,
+      deposit_amount: deposit.deposit_amount,
+      deposit_date: deposit.deposit_date ?? undefined,
+      reference: deposit.reference ?? undefined,
+      notes: deposit.notes ?? undefined,
+    });
     setDialogOpen(true);
   };
 
@@ -54,14 +72,23 @@ export function DepositsTab() {
     deleteDeposit.mutate(id);
   };
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const handleSubmit = (input: CreateCommissionDepositInput) => {
+    setSubmitError(null);
+    const callbacks = {
+      onSuccess: () => {
+        setSubmitError(null);
+        setDialogOpen(false);
+      },
+      onError: (err: Error) => {
+        setSubmitError(err.message || String(err));
+      },
+    };
     if (editingDeposit) {
-      updateDeposit.mutate(
-        { id: editingDeposit.id, input },
-        { onSuccess: () => setDialogOpen(false) }
-      );
+      updateDeposit.mutate({ id: editingDeposit.id, input }, callbacks);
     } else {
-      createDeposit.mutate(input, { onSuccess: () => setDialogOpen(false) });
+      createDeposit.mutate(input, callbacks);
     }
   };
 
@@ -181,7 +208,17 @@ export function DepositsTab() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
+                            onClick={() => handleDuplicate(d)}
+                            title="Duplicate"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                             onClick={() => handleEdit(d)}
+                            title="Edit"
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -190,6 +227,7 @@ export function DepositsTab() {
                             size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive"
                             onClick={() => handleDelete(d.id)}
+                            title="Delete"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -206,10 +244,12 @@ export function DepositsTab() {
 
       <DepositFormDialog
         open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(v) => { setDialogOpen(v); if (!v) setSubmitError(null); }}
         deposit={editingDeposit}
+        defaultValues={duplicateDefaults}
         onSubmit={handleSubmit}
         isPending={createDeposit.isPending || updateDeposit.isPending}
+        error={submitError}
       />
     </div>
   );

@@ -11,7 +11,7 @@ use crate::models::{
     StatementImportResult, UpdateCommissionDepositInput, UpdateCommissionRateInput,
 };
 use crate::repositories::commission_repo;
-use crate::services::import_service;
+use crate::services::commission_importers;
 
 // ============================================================================
 // Commission Rates
@@ -315,144 +315,31 @@ pub fn delete_commission_deposit(conn: &Connection, id: &str) -> Result<(), AppE
 // Statement Import
 // ============================================================================
 
-/// Auto-map commission statement column headers
-pub fn auto_map_commission_columns(headers: &[String]) -> HashMap<String, String> {
-    let aliases: &[(&str, &[&str])] = &[
-        (
-            "member_name",
-            &[
-                "member name",
-                "name",
-                "member",
-                "subscriber name",
-                "subscriber",
-                "insured name",
-                "enrollee",
-                "enrollee name",
-            ],
-        ),
-        (
-            "member_id",
-            &[
-                "member id",
-                "member number",
-                "subscriber id",
-                "id",
-                "mbi",
-                "hicn",
-                "medicare id",
-            ],
-        ),
-        (
-            "first_name",
-            &[
-                "first name",
-                "first",
-                "fname",
-                "member first name",
-            ],
-        ),
-        (
-            "last_name",
-            &[
-                "last name",
-                "last",
-                "lname",
-                "member last name",
-            ],
-        ),
-        (
-            "statement_amount",
-            &[
-                "amount",
-                "commission",
-                "commission amount",
-                "owed",
-                "amount owed",
-                "statement amount",
-                "gross commission",
-                "total commission",
-            ],
-        ),
-        (
-            "paid_amount",
-            &[
-                "paid",
-                "paid amount",
-                "net amount",
-                "net commission",
-                "payment amount",
-                "amount paid",
-            ],
-        ),
-        (
-            "plan_type",
-            &[
-                "plan type",
-                "product type",
-                "product",
-                "plan",
-                "line of business",
-                "lob",
-                "plan name",
-            ],
-        ),
-        (
-            "commission_month",
-            &[
-                "month",
-                "commission month",
-                "period",
-                "pay period",
-                "payment month",
-                "service month",
-            ],
-        ),
-    ];
-
-    let mut mapping = HashMap::new();
-    for header in headers {
-        let normalized = header.trim().to_lowercase().replace(['_', '-'], " ");
-        for (target, alias_list) in aliases {
-            if alias_list.iter().any(|a| *a == normalized) {
-                mapping.insert(header.clone(), target.to_string());
-                break;
-            }
-        }
-    }
-    mapping
+/// Parse a commission statement file and return headers + sample rows (for preview)
+pub fn parse_commission_statement(file_path: &str) -> Result<crate::services::import_service::ParsedFile, AppError> {
+    crate::services::import_service::parse_file(file_path)
 }
 
-/// Parse a commission statement file and return headers + sample rows
-pub fn parse_commission_statement(file_path: &str) -> Result<import_service::ParsedFile, AppError> {
-    let parsed = import_service::parse_file(file_path)?;
-    Ok(parsed)
-}
-
-/// Import a commission statement file
+/// Import a commission statement file.
+/// Dispatches to the correct carrier-specific parser based on `carrier.short_name`.
 pub fn import_commission_statement(
     conn: &Connection,
     file_path: &str,
     carrier_id: &str,
     commission_month: &str,
-    column_mapping: &HashMap<String, String>,
+    _column_mapping: &HashMap<String, String>,
 ) -> Result<StatementImportResult, AppError> {
-    let (headers, rows) = import_service::get_all_rows(file_path)?;
-    let batch_id = Uuid::new_v4().to_string();
+    // Look up carrier short_name for dispatch
+    let short_name: String = conn
+        .query_row(
+            "SELECT COALESCE(short_name, name) FROM carriers WHERE id = ?1",
+            rusqlite::params![carrier_id],
+            |row| row.get(0),
+        )
+        .map_err(|_| AppError::NotFound(format!("Carrier not found: {}", carrier_id)))?;
 
-    // Build column index map: target_field -> column_index
-    let auto_map = auto_map_commission_columns(&headers);
-    let effective_map: HashMap<String, usize> = headers
-        .iter()
-        .enumerate()
-        .filter_map(|(i, h)| {
-            // User mapping overrides auto
-            let target = column_mapping
-                .get(h)
-                .or_else(|| auto_map.get(h));
-            target.map(|t| (t.clone(), i))
-        })
-        .collect();
+    let parsed_rows = commission_importers::parse_statement_rows(file_path, &short_name)?;
+    let batch_id = Uuid::new_v4().to_string();
 
     let mut matched = 0;
     let mut unmatched = 0;
@@ -461,41 +348,9 @@ pub fn import_commission_statement(
     let mut unmatched_names = Vec::new();
     let mut error_messages = Vec::new();
 
-    for (row_idx, row) in rows.iter().enumerate() {
-        let get_field = |field: &str| -> Option<String> {
-            effective_map
-                .get(field)
-                .and_then(|&idx| row.get(idx))
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        };
-
-        // Extract member name - either from combined field or first+last
-        let member_name = get_field("member_name").or_else(|| {
-            let first = get_field("first_name").unwrap_or_default();
-            let last = get_field("last_name").unwrap_or_default();
-            if first.is_empty() && last.is_empty() {
-                None
-            } else {
-                Some(format!("{} {}", first, last).trim().to_string())
-            }
-        });
-
-        let member_id = get_field("member_id");
-
-        // Parse amount - strip currency symbols
-        let parse_amount = |field: &str| -> Option<f64> {
-            get_field(field).and_then(|s| {
-                s.replace(['$', ',', ' '], "").parse::<f64>().ok()
-            })
-        };
-
-        let statement_amount = parse_amount("statement_amount");
-        let paid_amount = parse_amount("paid_amount").or(statement_amount);
-
-        if member_name.is_none() && member_id.is_none() {
-            // Skip rows with no identifying info
-            if statement_amount.is_some() {
+    for (row_idx, row) in parsed_rows.iter().enumerate() {
+        if row.member_name.is_none() && row.member_id.is_none() {
+            if row.statement_amount.is_some() {
                 errors += 1;
                 error_messages.push(format!("Row {}: No member name or ID", row_idx + 2));
             } else {
@@ -505,25 +360,32 @@ pub fn import_commission_statement(
         }
 
         // Try to match to a client
-        let (client_id, enrollment_id, plan_type_code) = match_statement_member(
+        let (client_id, enrollment_id, enrollment_plan_type) = match_statement_member(
             conn,
-            member_name.as_deref(),
-            member_id.as_deref(),
+            row.member_name.as_deref(),
+            row.member_id.as_deref(),
             carrier_id,
+            row.member_id_is_mbi,
         );
+
+        // Prefer importer-provided plan_type, fall back to enrollment plan_type
+        let plan_type_code = row.plan_type_code.clone().or(enrollment_plan_type);
 
         let status = if client_id.is_some() {
             matched += 1;
             "PENDING"
         } else {
             unmatched += 1;
-            if let Some(ref name) = member_name {
+            if let Some(ref name) = row.member_name {
                 if !unmatched_names.contains(name) {
                     unmatched_names.push(name.clone());
                 }
             }
             "UNMATCHED"
         };
+
+        // Use importer-provided is_initial when available
+        let is_initial = row.is_initial.map(|b| if b { 1 } else { 0 });
 
         let entry = CommissionEntry {
             id: Uuid::new_v4().to_string(),
@@ -532,16 +394,16 @@ pub fn import_commission_statement(
             carrier_id: carrier_id.to_string(),
             plan_type_code,
             commission_month: commission_month.to_string(),
-            statement_amount,
-            paid_amount,
-            member_name,
-            member_id,
-            is_initial: None,
+            statement_amount: row.statement_amount,
+            paid_amount: row.paid_amount,
+            member_name: row.member_name.clone(),
+            member_id: row.member_id.clone(),
+            is_initial,
             expected_rate: None,
             rate_difference: None,
             status: Some(status.to_string()),
             import_batch_id: Some(batch_id.clone()),
-            notes: None,
+            notes: row.notes.clone(),
             created_at: None,
             updated_at: None,
         };
@@ -566,26 +428,31 @@ pub fn import_commission_statement(
     })
 }
 
-/// Match a statement member to a client in the database
+/// Match a statement member to a client in the database.
+/// When `member_id_is_mbi` is true, the member_id is tried as an MBI lookup.
+/// When false (e.g. Humana's GrpNbr), the MBI lookup is skipped.
 fn match_statement_member(
     conn: &Connection,
     member_name: Option<&str>,
     member_id: Option<&str>,
     carrier_id: &str,
+    member_id_is_mbi: bool,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    // Try member_id (MBI) match first
-    if let Some(mid) = member_id {
-        if !mid.is_empty() {
-            if let Ok((cid, eid, ptc)) = conn.query_row(
-                "SELECT c.id, e.id, e.plan_type_code
-                 FROM clients c
-                 LEFT JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?2 AND e.is_active = 1
-                 WHERE c.mbi = ?1 AND c.is_active = 1
-                 LIMIT 1",
-                rusqlite::params![mid, carrier_id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?)),
-            ) {
-                return (Some(cid), eid, ptc);
+    // Try member_id (MBI) match first — only if the ID is actually an MBI
+    if member_id_is_mbi {
+        if let Some(mid) = member_id {
+            if !mid.is_empty() {
+                if let Ok((cid, eid, ptc)) = conn.query_row(
+                    "SELECT c.id, e.id, e.plan_type_code
+                     FROM clients c
+                     LEFT JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?2 AND e.is_active = 1
+                     WHERE c.mbi = ?1 AND c.is_active = 1
+                     LIMIT 1",
+                    rusqlite::params![mid, carrier_id],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?)),
+                ) {
+                    return (Some(cid), eid, ptc);
+                }
             }
         }
     }

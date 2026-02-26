@@ -27,16 +27,20 @@ interface DepositFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   deposit?: CommissionDepositListItem;
+  defaultValues?: CreateCommissionDepositInput;
   onSubmit: (input: CreateCommissionDepositInput) => void;
   isPending: boolean;
+  error?: string | null;
 }
 
 export function DepositFormDialog({
   open,
   onOpenChange,
   deposit,
+  defaultValues,
   onSubmit,
   isPending,
+  error,
 }: DepositFormDialogProps) {
   const { data: carriers } = useCarriers();
   const [carrierId, setCarrierId] = useState("");
@@ -54,6 +58,13 @@ export function DepositFormDialog({
       setDepositDate(deposit.deposit_date ?? "");
       setReference(deposit.reference ?? "");
       setNotes(deposit.notes ?? "");
+    } else if (defaultValues) {
+      setCarrierId(defaultValues.carrier_id);
+      setDepositMonth(defaultValues.deposit_month);
+      setDepositAmount(defaultValues.deposit_amount);
+      setDepositDate(defaultValues.deposit_date ?? "");
+      setReference(defaultValues.reference ?? "");
+      setNotes(defaultValues.notes ?? "");
     } else {
       setCarrierId("");
       setDepositMonth("");
@@ -62,10 +73,9 @@ export function DepositFormDialog({
       setReference("");
       setNotes("");
     }
-  }, [deposit, open]);
+  }, [deposit, defaultValues, open]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleClick = () => {
     onSubmit({
       carrier_id: carrierId,
       deposit_month: depositMonth,
@@ -76,13 +86,19 @@ export function DepositFormDialog({
     });
   };
 
+  const title = deposit
+    ? "Edit Deposit"
+    : defaultValues
+      ? "Duplicate Deposit"
+      : "Record Deposit";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{deposit ? "Edit Deposit" : "Record Deposit"}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2">
             <Label>Carrier</Label>
             <Select value={carrierId} onValueChange={setCarrierId}>
@@ -146,22 +162,25 @@ export function DepositFormDialog({
             />
           </div>
 
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+
           <DialogFooter>
             <Button
-              type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
             <Button
-              type="submit"
+              onClick={handleClick}
               disabled={!carrierId || !depositMonth || isPending}
             >
               {isPending ? "Saving..." : deposit ? "Update" : "Create"}
             </Button>
           </DialogFooter>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
