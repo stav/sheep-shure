@@ -72,14 +72,17 @@ fn query_pairs(conn: &Connection, sql: &str) -> Result<Vec<(String, i64)>, AppEr
 }
 
 fn query_carrier_breakdown(conn: &Connection) -> Result<Vec<(String, i64, i64)>, AppError> {
-    let sql = "SELECT COALESCE(c.short_name, c.name, 'Unknown'), \
-               COUNT(DISTINCT e.client_id), \
+    // Count all active clients grouped by carrier (via active enrollment),
+    // including those with no enrollment as "No Carrier"
+    let sql = "SELECT COALESCE(c.short_name, c.name, 'No Carrier') AS carrier, \
+               COUNT(DISTINCT cl.id), \
                COALESCE(c.expected_active, 0) \
-               FROM enrollments e \
+               FROM clients cl \
+               LEFT JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' AND e.is_active = 1 \
                LEFT JOIN carriers c ON e.carrier_id = c.id \
-               WHERE e.status_code = 'ACTIVE' AND e.is_active = 1 \
-               GROUP BY e.carrier_id \
-               ORDER BY COUNT(DISTINCT e.client_id) DESC";
+               WHERE cl.is_active = 1 \
+               GROUP BY COALESCE(c.short_name, c.name, 'No Carrier') \
+               ORDER BY COUNT(DISTINCT cl.id) DESC";
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))

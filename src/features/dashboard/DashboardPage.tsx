@@ -55,7 +55,7 @@ export function DashboardPage() {
   }
 
   const planTypeData = stats.by_plan_type.map(([name, value]) => ({ name, value }));
-  const carrierData = stats.by_carrier.map(([name, actual, expected]) => ({ name, actual, expected }));
+  const carrierData = stats.by_carrier.map(([name, actual, expected]) => ({ name, value: actual, expected }));
   const trendData = stats.monthly_trend.map((t) => ({
     month: t.month,
     New: t.new_clients,
@@ -107,47 +107,43 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Carrier Breakdown — Actual vs Expected */}
+        {/* Carrier Breakdown */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Active by Carrier</CardTitle>
           </CardHeader>
           <CardContent>
             {carrierData.length > 0 ? (
-              <div className="space-y-3">
-                {carrierData.map((c) => {
-                  const hasExpected = c.expected > 0;
-                  const matches = hasExpected && c.actual === c.expected;
-                  return (
-                    <div
-                      key={c.name}
-                      className="flex items-center justify-between rounded-md border px-4 py-3"
-                    >
-                      <span className="text-sm font-medium">{c.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`text-lg font-bold ${
-                            hasExpected
-                              ? matches
-                                ? "text-green-600"
-                                : "text-red-600"
-                              : ""
-                          }`}
-                        >
-                          {c.actual}
-                        </span>
-                        {hasExpected && (
-                          <span className="text-sm text-muted-foreground">
-                            / {c.expected}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={carrierData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={2}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {carrierData.map((entry, index) => {
+                      const color = entry.name === "No Carrier" ? "#6B7280"
+                        : entry.name.toLowerCase().includes("caresource") ? "#8B5CF6"
+                        : COLORS[index % COLORS.length];
+                      return <Cell key={index} fill={color} />;
+                    })}
+                  </Pie>
+                  <Tooltip formatter={(value: number, _name: string, props: { payload?: { name?: string } }) => [value, props.payload?.name ?? ""]} />
+                  <text x="50%" y="46%" textAnchor="middle" dominantBaseline="central" className="fill-foreground text-2xl font-bold">
+                    {carrierData.reduce((sum, c) => sum + c.value, 0)}
+                  </text>
+                  <text x="50%" y="56%" textAnchor="middle" dominantBaseline="central" className="fill-muted-foreground text-xs">
+                    clients
+                  </text>
+                </PieChart>
+              </ResponsiveContainer>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-12">No enrollment data yet</p>
+              <p className="text-sm text-muted-foreground text-center py-12">No carrier data yet</p>
             )}
           </CardContent>
         </Card>
