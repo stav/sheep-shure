@@ -7,13 +7,59 @@ use super::CarrierPortal;
 
 pub struct HumanaPortal;
 
-const LOGIN_URL: &str = "https://agentportal.humana.com/Vantage/apps/index.html?agenthome=-1#!/";
+const LOGIN_URL: &str = "https://account.humana.com/";
 
-/// Auto-login script: fills and submits the Humana/Vantage login form.
+/// Auto-login script: fills and submits the Humana login form.
+/// Uses a global flag to prevent re-submitting after a failed login attempt
+/// (the init script re-runs on every page load/navigation).
+/// Also handles the post-login "Select where you want to sign in" modal
+/// by automatically clicking the "Agent" button.
 const AUTO_LOGIN_SCRIPT: &str = r#"
 (function() {
     if (!window.__compass_creds) return;
+    if (window.__compass_login_submitted) return;
+
+    // ── Submit the portal-selection form as "Agent" ──
+    function tryPickAgent() {
+        var form = document.getElementById('multiPortalAccessForm');
+        if (!form) return false;
+
+        // Set the hidden SelectedPortal field
+        var sel = form.querySelector('input[name="SelectedPortal"]');
+        if (sel) sel.value = 'Agent';
+
+        // Find the Agent submit button (second button in the form)
+        var buttons = form.querySelectorAll('button[type="submit"]');
+        var agentBtn = null;
+        for (var i = 0; i < buttons.length; i++) {
+            if (buttons[i].textContent.indexOf('Agent') !== -1) {
+                agentBtn = buttons[i];
+                break;
+            }
+        }
+
+        // Try requestSubmit with the button (preserves submitter info)
+        if (agentBtn && form.requestSubmit) {
+            try { form.requestSubmit(agentBtn); return true; } catch (e) {}
+        }
+        // Fallback: plain form.submit()
+        form.submit();
+        return true;
+    }
+
+    // ── Check if login error is showing — don't retry ──
+    function hasLoginError() {
+        var t = document.body ? document.body.textContent : '';
+        return t.indexOf('don\u2019t recognize') !== -1 ||
+               t.indexOf("don't recognize") !== -1 ||
+               t.indexOf('invalid credentials') !== -1 ||
+               t.indexOf('account is locked') !== -1 ||
+               t.indexOf('too many attempts') !== -1;
+    }
+
+    // ── Try to fill and submit the login form ──
     function tryLogin() {
+        if (hasLoginError()) return 'error';
         var passField = document.querySelector('input[type="password"]');
         if (!passField) return false;
         var form = passField.closest('form');
@@ -31,242 +77,127 @@ const AUTO_LOGIN_SCRIPT: &str = r#"
         var submit = form
             ? (form.querySelector('button[type="submit"], input[type="submit"]') || form.querySelector('button'))
             : document.querySelector('button[type="submit"], input[type="submit"]');
-        if (submit) { submit.click(); return true; }
+        if (submit) {
+            window.__compass_login_submitted = true;
+            submit.click();
+            return true;
+        }
         return false;
     }
-    // Delay before polling to let SSO redirects complete naturally
+
+    // ── Unified polling: handle login form OR role-selection modal ──
     setTimeout(function() {
-        var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
-        setTimeout(function() { clearInterval(iv); }, 15000);
-    }, 2000);
+        var iv = setInterval(function() {
+            // If the role-selection modal appeared, submit the form as "Agent"
+            var form = document.getElementById('multiPortalAccessForm');
+            if (form) {
+                clearInterval(iv);
+                tryPickAgent();
+                return;
+            }
+            // Otherwise try login
+            var result = tryLogin();
+            if (result === true || result === 'error') clearInterval(iv);
+        }, 500);
+        setTimeout(function() { clearInterval(iv); }, 30000);
+    }, 1000);
 })();
 "#;
 
-/// Scrape the Humana Vantage "My Humana Business" table at #!/businessCenter.
-/// The table columns are:
-///   0:Name  1:Type  2:Coverage Type  3:Plan Type  4:Sales Product
-///   5:Soa Verification Code  6:Humana ID  7:Effective Date  8:Status
-///   9:Status Reason  10:Status Description  11:Inactive Date  12:Plan Exit
-///   13:Future Term Reason  14:Signature Date  15:Phone  16:Email
-///   17:BirthDate  18:Deceased Date
+/// Fetch Humana Vantage member data via the business center API.
+/// This is more reliable than DOM scraping since the Vantage React SPA
+/// has click-handling issues in the Tauri webview.
 const FETCH_SCRIPT: &str = r#"
 (async () => {
     try {
-        // Helper: wait for a condition with timeout
-        function waitFor(fn, ms) {
-            return new Promise(function(resolve) {
-                const start = Date.now();
-                const iv = setInterval(function() {
-                    const result = fn();
-                    if (result) { clearInterval(iv); resolve(result); }
-                    else if (Date.now() - start > ms) { clearInterval(iv); resolve(null); }
-                }, 300);
-            });
-        }
-
-        // Navigate to businessCenter if not already there
-        if (!window.location.hash.includes('businessCenter')) {
-            window.location.hash = '#!/businessCenter';
-            await new Promise(function(r) { setTimeout(r, 3000); });
-        }
-
-        // Wait for the member table to appear
-        const table = await waitFor(function() {
-            const tables = document.querySelectorAll('table');
-            for (const t of tables) {
-                const ths = t.querySelectorAll('th');
-                for (const th of ths) {
-                    if (th.textContent.trim() === 'Humana ID') return t;
-                }
-            }
-            return null;
-        }, 10000);
-
-        if (!table) {
-            throw new Error('Could not find the member table. Make sure you are logged in and on the Business Center page.');
-        }
-
-        // Convert M/D/YYYY or MM/DD/YYYY to YYYY-MM-DD
-        function toIso(dateStr) {
-            if (!dateStr) return null;
-            const m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-            if (!m) return dateStr;
-            return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
-        }
-
-        // Parse "LAST, FIRST M" into {first, last}
         function parseName(nameStr) {
             if (!nameStr) return { first: '', last: '' };
-            const commaIdx = nameStr.indexOf(',');
+            var commaIdx = nameStr.indexOf(',');
             if (commaIdx === -1) return { first: nameStr.trim(), last: '' };
-            const last = nameStr.substring(0, commaIdx).trim();
-            const first = nameStr.substring(commaIdx + 1).trim();
+            var last = nameStr.substring(0, commaIdx).trim();
+            var first = nameStr.substring(commaIdx + 1).trim();
             return { first: first, last: last };
         }
 
-        // The Vantage grid uses split tables: one for headers, one for
-        // the scrollable body.  Find both.
-        function findHeaderTable() {
-            const tables = document.querySelectorAll('table');
-            for (const t of tables) {
-                const ths = t.querySelectorAll('th');
-                for (const th of ths) {
-                    if (th.textContent.trim() === 'Humana ID') return t;
-                }
-            }
-            return null;
+        function toIsoDate(dateStr) {
+            if (!dateStr) return null;
+            // Handle ISO datetime like "2025-08-01T00:00:00Z"
+            var m = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+            return m ? m[1] : dateStr;
         }
 
-        function findBodyTable() {
-            // Strategy 1: the body table is the other table with <td> rows
-            const tables = document.querySelectorAll('table');
-            const headerTbl = findHeaderTable();
-            for (const t of tables) {
-                if (t === headerTbl) continue;
-                if (t.querySelectorAll('td').length > 0) return t;
-            }
-            // Strategy 2: if the header table itself has tbody rows, use it
-            if (headerTbl && headerTbl.querySelectorAll('tbody tr td').length > 0) {
-                return headerTbl;
-            }
-            return null;
-        }
+        // Fetch all pages from the Vantage API
+        var allRecords = [];
+        var page = 0;
+        var pageSize = 50;
+        var totalRecords = null;
 
-        // Build column index map from the header table
-        function buildColMap() {
-            const tbl = findHeaderTable();
-            if (!tbl) return {};
-            const ths = tbl.querySelectorAll('th');
-            const map = {};
-            ths.forEach(function(th, idx) {
-                map[th.textContent.trim()] = idx;
+        while (true) {
+            var resp = await fetch('/Vantage/api/businesscenter/search-policies-and-applications', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Authorization': 'Basic VmFudGFnZVdlYkFwcDpwN1JFdmVkIzE='
+                },
+                body: JSON.stringify({
+                    filters: { dateFilter: null, filterValuesIds: [] },
+                    insightId: 'all',
+                    resultPaging: { amount: pageSize, page: page },
+                    resultSort: { columnId: 49, order: 'asc' }
+                })
             });
-            return map;
-        }
 
-        // Scrape rows from the body table
-        function scrapeRows() {
-            const bodyTbl = findBodyTable();
-            if (!bodyTbl) return [];
-            const colMap = buildColMap();
-            var rows = bodyTbl.querySelectorAll('tbody tr');
-            if (rows.length === 0) rows = bodyTbl.querySelectorAll('tr');
-            const members = [];
-            for (const row of rows) {
-                const cells = row.querySelectorAll('td');
-                if (cells.length < 6) continue;
-
-                function cell(name) {
-                    const idx = colMap[name];
-                    if (idx === undefined || idx >= cells.length) return null;
-                    const text = cells[idx].textContent.trim();
-                    return text || null;
+            if (!resp.ok) {
+                if (resp.status === 401 || resp.status === 403) {
+                    throw new Error(
+                        'Session expired (HTTP ' + resp.status + '). ' +
+                        'Close this window, re-open the portal, log in again, and retry.'
+                    );
                 }
-
-                const rawName = cell('Name');
-                if (!rawName) continue;
-                const name = parseName(rawName);
-                const planType = cell('Plan Type') || '';
-                const salesProduct = cell('Sales Product') || '';
-                const planName = [planType, salesProduct].filter(Boolean).join(' - ');
-                const status = cell('Status') || cell('Status Reason') || 'Active';
-                const phone = cell('Phone');
-
-                members.push({
-                    first_name: name.first,
-                    last_name: name.last,
-                    member_id: cell('Humana ID'),
-                    dob: toIso(cell('BirthDate')),
-                    plan_name: planName || null,
-                    effective_date: toIso(cell('Effective Date')),
-                    end_date: toIso(cell('Inactive Date')),
-                    status: status,
-                    policy_status: null,
-                    state: null,
-                    city: null,
-                    phone: (phone && phone !== 'Unavailable') ? phone : null,
-                    email: cell('Email')
-                });
+                var errText = await resp.text().catch(function() { return ''; });
+                throw new Error('API returned ' + resp.status + ': ' + errText.substring(0, 300));
             }
-            return members;
-        }
 
-        // Click "View all customers" to remove filters if present
-        const allLinks = document.querySelectorAll('a');
-        for (const a of allLinks) {
-            if (a.textContent.trim().toLowerCase() === 'view all customers') {
-                a.click();
-                // Wait for Angular to re-render the grid
-                await new Promise(function(r) { setTimeout(r, 3000); });
-                await waitFor(findBodyTable, 5000);
+            var data = await resp.json();
+
+            if (!data.records || data.records.length === 0) {
+                if (page === 0) {
+                    throw new Error('No records returned from the API. Make sure you are logged in as an agent.');
+                }
                 break;
             }
+
+            allRecords = allRecords.concat(data.records);
+            totalRecords = data.totalRecords || allRecords.length;
+
+            if (allRecords.length >= totalRecords) break;
+            page++;
+            if (page > 100) break; // safety limit
         }
 
-        // Collect all pages
-        var allMembers = [];
-        var maxPages = 50;
-
-        for (var page = 0; page < maxPages; page++) {
-            const pageMembers = scrapeRows();
-            allMembers = allMembers.concat(pageMembers);
-
-            // Look for next-page button
-            const buttons = document.querySelectorAll('button, a');
-            var nextBtn = null;
-            for (const btn of buttons) {
-                const text = btn.textContent.trim();
-                const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
-                const title = (btn.getAttribute('title') || '').toLowerCase();
-                if ((text === '>' || text === '\u203A' || text === '\u00BB' ||
-                     aria.includes('next') || title.includes('next')) &&
-                    !btn.disabled &&
-                    btn.offsetParent !== null) {
-                    nextBtn = btn;
-                    break;
-                }
-            }
-
-            if (!nextBtn) break;
-
-            // Check if we're on the last page by looking at pagination text
-            var isLastPage = false;
-            const leafNodes = document.querySelectorAll('*');
-            for (const el of leafNodes) {
-                if (el.children.length === 0) {
-                    const t = el.textContent.trim();
-                    const m = t.match(/(\d+)\s*[-\u2013]\s*(\d+)\s+of\s+(\d+)/i);
-                    if (m && parseInt(m[2]) >= parseInt(m[3])) {
-                        isLastPage = true;
-                        break;
-                    }
-                }
-            }
-            if (isLastPage) break;
-
-            nextBtn.click();
-            await new Promise(function(r) { setTimeout(r, 1500); });
-        }
-
-        if (allMembers.length === 0) {
-            // Debug: report what we see so we can diagnose
-            const hdrTbl = findHeaderTable();
-            const bdyTbl = findBodyTable();
-            const dbg = {
-                headerTableFound: !!hdrTbl,
-                bodyTableFound: !!bdyTbl,
-                bodyRowCount: bdyTbl ? bdyTbl.querySelectorAll('tr').length : 0,
-                bodyTbodyRowCount: bdyTbl ? bdyTbl.querySelectorAll('tbody tr').length : 0,
-                bodyTdCount: bdyTbl ? bdyTbl.querySelectorAll('td').length : 0,
-                headers: hdrTbl ? Array.from(hdrTbl.querySelectorAll('th')).map(function(th) { return th.textContent.trim(); }) : [],
-                firstBodyRowHtml: bdyTbl && bdyTbl.querySelector('tr') ? bdyTbl.querySelector('tr').innerHTML.substring(0, 500) : 'none',
-                allTablesCount: document.querySelectorAll('table').length
+        var members = allRecords.map(function(r) {
+            var name = parseName(r.mbrName);
+            var phone = r.mbrPrimPhone;
+            return {
+                first_name: name.first,
+                last_name: name.last,
+                member_id: r.umid || null,
+                dob: toIsoDate(r.birthDate),
+                plan_name: r.planAltDesc || [r.planType, r.salesProduct].filter(Boolean).join(' - ') || null,
+                effective_date: toIsoDate(r.covEffDate),
+                end_date: toIsoDate(r.covTermDate),
+                status: r.statusReasonDesc || r.status || 'Active',
+                policy_status: r.status || null,
+                state: null,
+                city: null,
+                phone: (phone && phone !== 'Unavailable') ? phone : null,
+                email: r.mbrEmail || null
             };
-            throw new Error('No members found. Debug: ' + JSON.stringify(dbg));
-        }
+        });
 
         window.location.href = 'http://compass-sync.localhost/data?members=' +
-            encodeURIComponent(JSON.stringify(allMembers));
+            encodeURIComponent(JSON.stringify(members));
     } catch (e) {
         window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
