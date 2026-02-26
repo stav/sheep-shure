@@ -132,6 +132,14 @@ impl CarrierPortal for MedMutualPortal {
         FETCH_SCRIPT
     }
 
+    fn auto_fetch(&self) -> bool {
+        true
+    }
+
+    fn sync_instruction(&self) -> &str {
+        "Log in to MyBrokerLink — data will sync automatically."
+    }
+
     async fn fetch_members(&self, _cookies: &str) -> Result<Vec<PortalMember>, AppError> {
         Err(AppError::CarrierSync("Medical Mutual reqwest fallback not implemented yet".into()))
     }

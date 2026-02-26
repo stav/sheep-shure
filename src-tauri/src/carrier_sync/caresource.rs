@@ -175,6 +175,10 @@ impl CarrierPortal for CareSourcePortal {
         FETCH_SCRIPT
     }
 
+    fn sync_instruction(&self) -> &str {
+        "Log in, navigate to the Active Book of Business page, then click Sync Now."
+    }
+
     async fn fetch_members(&self, _cookies: &str) -> Result<Vec<PortalMember>, AppError> {
         Err(AppError::CarrierSync("CareSource reqwest fallback not implemented yet".into()))
     }

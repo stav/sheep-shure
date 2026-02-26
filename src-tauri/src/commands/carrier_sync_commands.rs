@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl
 
 use crate::carrier_sync;
 use crate::db::DbState;
-use crate::models::{ConfirmDisenrollmentResult, ImportPortalResult, PortalMember, SyncLogEntry, SyncResult};
+use crate::models::{CarrierSyncInfo, ConfirmDisenrollmentResult, ImportPortalResult, PortalMember, SyncLogEntry, SyncResult};
 
 /// Open a webview window to the carrier's login portal.
 /// Sets up a navigation interceptor to catch sync results from injected JS.
@@ -113,6 +113,18 @@ pub fn get_carrier_login_url(carrier_id: String) -> Result<String, String> {
         .ok_or_else(|| format!("No portal integration for carrier: {}", carrier_id))?;
 
     Ok(portal.login_url().to_string())
+}
+
+/// Get sync behaviour info for a carrier (auto_fetch, instruction text).
+#[tauri::command]
+pub fn get_carrier_sync_info(carrier_id: String) -> Result<CarrierSyncInfo, String> {
+    let portal = carrier_sync::get_portal(&carrier_id)
+        .ok_or_else(|| format!("No portal integration for carrier: {}", carrier_id))?;
+
+    Ok(CarrierSyncInfo {
+        auto_fetch: portal.auto_fetch(),
+        sync_instruction: portal.sync_instruction().to_string(),
+    })
 }
 
 /// Import selected portal members as new clients with enrollments.

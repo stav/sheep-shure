@@ -15,6 +15,7 @@ import {
   useProcessPortalMembers,
   useSyncLogs,
   useUpdateExpectedActive,
+  useCarrierSyncInfo,
 } from "@/hooks/useCarrierSync";
 import { useCarriers } from "@/hooks/useClients";
 import { CARRIERS } from "./utils";
@@ -36,6 +37,9 @@ export function CarrierSyncPage() {
   const { data: syncLogs } = useSyncLogs();
   const { data: dbCarriers } = useCarriers();
   const updateExpectedActive = useUpdateExpectedActive();
+  const { data: syncInfo } = useCarrierSyncInfo(selectedCarrier);
+
+  const isAutoFetch = syncInfo?.auto_fetch ?? false;
 
   // Listen for data coming back from the carrier webview
   const handleSyncData = useCallback(
@@ -103,6 +107,17 @@ export function CarrierSyncPage() {
     });
   };
 
+  // Description text based on phase and auto_fetch
+  const getDescription = () => {
+    if (syncPhase === "fetching") return "Fetching member data from the carrier portal...";
+    if (syncPhase === "processing") return "Comparing portal data against local enrollments...";
+    if (syncPhase === "idle" && lastResult) return "Sync complete. You can run another sync or open a different carrier.";
+
+    // Login or idle-without-result: show carrier-specific instruction
+    if (syncInfo?.sync_instruction) return syncInfo.sync_instruction;
+    return "Open the portal, log in, then click Sync Now to fetch and compare member data.";
+  };
+
   return (
     <div className="space-y-6">
       <CarrierTable
@@ -120,37 +135,35 @@ export function CarrierSyncPage() {
               Sync{" "}
               {CARRIERS.find((c) => c.id === selectedCarrier)?.name}
             </CardTitle>
-            <CardDescription>
-              {syncPhase === "login" &&
-                "Log in to the carrier portal in the opened window, then click Sync Now."}
-              {syncPhase === "fetching" &&
-                "Fetching member data from the carrier portal..."}
-              {syncPhase === "processing" &&
-                "Comparing portal data against local enrollments..."}
-              {syncPhase === "idle" &&
-                !lastResult &&
-                "Open the portal, log in, then click Sync Now to fetch and compare member data."}
-              {syncPhase === "idle" &&
-                lastResult &&
-                "Sync complete. You can run another sync or open a different carrier."}
-            </CardDescription>
+            <CardDescription>{getDescription()}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Button
-              onClick={handleTriggerSync}
-              disabled={syncPhase === "fetching" || syncPhase === "processing"}
-            >
-              {syncPhase === "fetching" || syncPhase === "processing" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRightLeft className="mr-2 h-4 w-4" />
-              )}
-              {syncPhase === "fetching"
-                ? "Fetching from portal..."
-                : syncPhase === "processing"
-                  ? "Processing..."
-                  : "Sync Now"}
-            </Button>
+            {/* Auto-fetch carriers: show spinner during login, hide Sync Now button */}
+            {isAutoFetch && syncPhase === "login" && !lastResult && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Waiting for login — data will sync automatically...
+              </div>
+            )}
+
+            {/* Always show Sync Now for manual carriers, or as re-sync for auto carriers */}
+            {(!isAutoFetch || syncPhase !== "login") && (
+              <Button
+                onClick={handleTriggerSync}
+                disabled={syncPhase === "fetching" || syncPhase === "processing"}
+              >
+                {syncPhase === "fetching" || syncPhase === "processing" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRightLeft className="mr-2 h-4 w-4" />
+                )}
+                {syncPhase === "fetching"
+                  ? "Fetching from portal..."
+                  : syncPhase === "processing"
+                    ? "Processing..."
+                    : "Sync Now"}
+              </Button>
+            )}
 
             {syncError && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">

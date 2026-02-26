@@ -345,6 +345,11 @@ export interface ImportPortalResult {
   errors: string[];
 }
 
+export interface CarrierSyncInfo {
+  auto_fetch: boolean;
+  sync_instruction: string;
+}
+
 export interface ConfirmDisenrollmentResult {
   disenrolled: number;
   errors: string[];

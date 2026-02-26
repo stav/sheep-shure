@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tauriInvoke } from "@/lib/tauri";
-import type { SyncResult, SyncLogEntry, ImportPortalResult, ConfirmDisenrollmentResult } from "@/types";
+import type { SyncResult, SyncLogEntry, ImportPortalResult, ConfirmDisenrollmentResult, CarrierSyncInfo } from "@/types";
 
 export function useOpenCarrierLogin() {
   return useMutation({
@@ -95,6 +95,17 @@ export function useUpdateExpectedActive() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["carriers"] });
     },
+  });
+}
+
+export function useCarrierSyncInfo(carrierId: string | null) {
+  return useQuery({
+    queryKey: ["carrier-sync-info", carrierId],
+    queryFn: () =>
+      tauriInvoke<CarrierSyncInfo>("get_carrier_sync_info", {
+        carrierId: carrierId!,
+      }),
+    enabled: !!carrierId,
   });
 }
 

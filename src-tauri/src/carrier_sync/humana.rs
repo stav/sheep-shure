@@ -259,6 +259,10 @@ impl CarrierPortal for HumanaPortal {
         FETCH_SCRIPT
     }
 
+    fn sync_instruction(&self) -> &str {
+        "Log in, navigate to My Humana Business, then click Sync Now."
+    }
+
     async fn fetch_members(&self, _cookies: &str) -> Result<Vec<PortalMember>, AppError> {
         Err(AppError::CarrierSync("Humana reqwest fallback not implemented yet".into()))
     }

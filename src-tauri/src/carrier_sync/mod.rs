@@ -36,6 +36,18 @@ pub trait CarrierPortal: Send + Sync {
     /// on failure.
     fn fetch_script(&self) -> &str;
 
+    /// Whether this carrier auto-fetches data after login (via init_script).
+    /// When true, the UI skips the manual "Sync Now" step and shows
+    /// "Syncing automatically after login…" instead.
+    fn auto_fetch(&self) -> bool {
+        false
+    }
+
+    /// Instruction text shown in the UI while the user is in the login phase.
+    fn sync_instruction(&self) -> &str {
+        "Log in, navigate to the Book of Business page, then click Sync Now."
+    }
+
     /// Fetch members via HTTP using cookies (fallback approach).
     async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError>;
 }

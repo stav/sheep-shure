@@ -32,6 +32,17 @@ const INIT_SCRIPT: &str = r#"
         } catch (e) {}
     }
 
+    // Auto-trigger fetch once both credentials are captured
+    function tryAutoFetch() {
+        if (window.__compass_uhc_partyID && window.__compass_uhc_opd && !window.__compassBobFetched) {
+            setTimeout(function() {
+                if (window.__compassFetchUhc && !window.__compassBobFetched) {
+                    window.__compassFetchUhc(true);
+                }
+            }, 500);
+        }
+    }
+
     // Patch fetch
     const origFetch = window.fetch;
     window.fetch = function(resource, init) {
@@ -41,6 +52,7 @@ const INIT_SCRIPT: &str = r#"
             if (url.includes('bookOfBusiness')) {
                 extractFromUrl(url);
                 if (init && init.body) extractFromBody(init.body);
+                tryAutoFetch();
             }
         } catch (e) {}
         return origFetch.apply(this, arguments);
@@ -58,19 +70,18 @@ const INIT_SCRIPT: &str = r#"
             if (this.__compass_url && this.__compass_url.includes('bookOfBusiness')) {
                 extractFromUrl(this.__compass_url);
                 extractFromBody(body);
+                tryAutoFetch();
             }
         } catch (e) {}
         return origSend.apply(this, arguments);
     };
 })();
-"#;
 
-/// Fetch all active members from the Jarvis Book of Business API.
-/// Uses partyID and opd captured by init_script from the SPA's own call.
-/// No pagination — API returns up to 500 records in a single response.
-const FETCH_SCRIPT: &str = r#"
-(async () => {
+// ── Fetch function (also called by init interceptor above) ──
+window.__compassFetchUhc = async function(silent) {
     try {
+        if (window.__compassBobFetched) return;
+
         let partyID = window.__compass_uhc_partyID;
         let opd = window.__compass_uhc_opd;
 
@@ -95,7 +106,6 @@ const FETCH_SCRIPT: &str = r#"
                 if (!opd && obj.opd) opd = obj.opd;
                 for (const k in obj) {
                     if (typeof obj[k] === 'object') deepFind(obj[k], depth + 1);
-                    // Handle stringified JSON nested inside values
                     if (typeof obj[k] === 'string' && obj[k].startsWith('{')) {
                         try { deepFind(JSON.parse(obj[k]), depth + 1); } catch (e) {}
                     }
@@ -122,7 +132,6 @@ const FETCH_SCRIPT: &str = r#"
                     const pidData = await pidResp.json();
                     if (pidData.partyID) partyID = pidData.partyID;
                     else if (pidData.partyId) partyID = pidData.partyId;
-                    // Search the response object for partyID
                     else {
                         const txt = JSON.stringify(pidData);
                         const m = txt.match(/"party[Ii][Dd]"\s*:\s*"([^"]+)"/);
@@ -133,6 +142,7 @@ const FETCH_SCRIPT: &str = r#"
         }
 
         if (!partyID || !opd) {
+            if (silent) return;
             const debug = {
                 captured: { partyID: partyID || null, opd: opd || null },
                 ls_keys: Object.keys(localStorage),
@@ -170,25 +180,26 @@ const FETCH_SCRIPT: &str = r#"
             })
         });
 
-        if (resp.status === 401 || resp.status === 403) {
-            throw new Error(
-                'Session expired (HTTP ' + resp.status + '). ' +
-                'Close this window, re-open the portal, log in again, and retry.'
-            );
-        }
         if (!resp.ok) {
+            if (silent) return;
+            if (resp.status === 401 || resp.status === 403) {
+                throw new Error(
+                    'Session expired (HTTP ' + resp.status + '). ' +
+                    'Close this window, re-open the portal, log in again, and retry.'
+                );
+            }
             const text = await resp.text().catch(() => '');
             throw new Error('API returned ' + resp.status + ': ' + text.substring(0, 300));
         }
 
         const data = await resp.json();
         if (data.errors && data.errors.length > 0) {
+            if (silent) return;
             throw new Error('API errors: ' + data.errors.join('; '));
         }
 
         const list = data.bookOfBusinessList || [];
 
-        // Convert MM/DD/YYYY to YYYY-MM-DD
         function toIso(dateStr) {
             if (!dateStr) return null;
             const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -214,13 +225,22 @@ const FETCH_SCRIPT: &str = r#"
             };
         });
 
+        window.__compassBobFetched = true;
         window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(members));
     } catch (e) {
-        window.location.href = 'http://compass-sync.localhost/error?message=' +
-            encodeURIComponent(e.toString());
+        if (!silent) {
+            window.location.href = 'http://compass-sync.localhost/error?message=' +
+                encodeURIComponent(e.toString());
+        }
     }
-})();
+};
+"#;
+
+/// Manual fetch script: resets flag and runs with error reporting.
+const FETCH_SCRIPT: &str = r#"
+window.__compassBobFetched = false;
+window.__compassFetchUhc(false);
 "#;
 
 #[async_trait]
@@ -243,6 +263,14 @@ impl CarrierPortal for UhcPortal {
 
     fn fetch_script(&self) -> &str {
         FETCH_SCRIPT
+    }
+
+    fn auto_fetch(&self) -> bool {
+        true
+    }
+
+    fn sync_instruction(&self) -> &str {
+        "Log in to Jarvis — data will sync automatically."
     }
 
     async fn fetch_members(&self, _cookies: &str) -> Result<Vec<PortalMember>, AppError> {

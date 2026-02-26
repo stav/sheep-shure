@@ -89,6 +89,7 @@ pub fn run() {
             commands::trigger_carrier_fetch,
             commands::process_portal_members,
             commands::get_carrier_login_url,
+            commands::get_carrier_sync_info,
             commands::import_portal_members,
             commands::confirm_disenrollments,
             commands::get_sync_logs,

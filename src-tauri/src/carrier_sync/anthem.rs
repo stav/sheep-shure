@@ -237,6 +237,10 @@ impl CarrierPortal for AnthemPortal {
         FETCH_SCRIPT
     }
 
+    fn sync_instruction(&self) -> &str {
+        "Log in, navigate to the Book of Business page, then click Sync Now."
+    }
+
     async fn fetch_members(&self, _cookies: &str) -> Result<Vec<PortalMember>, AppError> {
         Err(AppError::CarrierSync("Anthem reqwest fallback not implemented yet".into()))
     }

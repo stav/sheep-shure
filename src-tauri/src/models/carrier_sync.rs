@@ -75,6 +75,13 @@ pub struct ConfirmDisenrollmentResult {
     pub errors: Vec<String>,
 }
 
+/// Info about a carrier's sync behaviour, returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CarrierSyncInfo {
+    pub auto_fetch: bool,
+    pub sync_instruction: String,
+}
+
 /// Summary log entry for a completed sync operation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncLogEntry {

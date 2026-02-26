@@ -20,20 +20,22 @@ const DETAIL_QUERY_HASH: &str =
 
 const PAGE_LIMIT: i64 = 100;
 
-/// JS injected at document-start (before any page scripts) to intercept
-/// CSRF tokens from the Devoted React app's own fetch/XHR calls.
-const INIT_SCRIPT: &str = "";
+/// Init script: defines the fetch function and auto-calls it silently on load.
+/// If the user isn't logged in yet, the CSRF/GraphQL calls fail and nothing happens.
+const INIT_SCRIPT: &str = r#"
+window.addEventListener('load', () => {
+    if (window.__compassBobFetched) return;
+    window.__compassFetchDevoted(true);
+});
 
-/// JS that runs when the user clicks "Sync Now".
-/// Reads the CSRF token captured by the init script, then fetches all members.
-const FETCH_SCRIPT: &str = r#"
-(async () => {
+window.__compassFetchDevoted = async function(silent) {
     try {
-        // Read orinoco config for the client version header
+        if (window.__compassBobFetched) return;
+
         const orinocoConfig = window.__orinoco_config || {};
         const clientVersion = orinocoConfig.VERSION || 'unknown';
 
-        // Step 1: Fetch the CSRF token via the dedicated GraphQL query
+        // Step 1: Fetch CSRF token
         const csrfResp = await fetch('/graphql/agents/', {
             method: 'POST',
             headers: {
@@ -55,16 +57,18 @@ const FETCH_SCRIPT: &str = r#"
             })
         });
         if (!csrfResp.ok) {
+            if (silent) return;
             const body = await csrfResp.text().catch(() => '');
             throw new Error('CSRF fetch returned ' + csrfResp.status + ': ' + body.substring(0, 300));
         }
         const csrfJson = await csrfResp.json();
         const csrfToken = csrfJson.data && csrfJson.data.CSRFToken;
         if (!csrfToken) {
+            if (silent) return;
             throw new Error('CSRFToken query returned no token: ' + JSON.stringify(csrfJson));
         }
 
-        // Step 2: Fetch members using the real CSRF token
+        // Step 2: Fetch members
         let allMembers = [];
         let page = 1;
         let hasNext = true;
@@ -102,12 +106,16 @@ const FETCH_SCRIPT: &str = r#"
             });
 
             if (!resp.ok) {
+                if (silent) return;
                 const body = await resp.text().catch(() => '');
                 throw new Error('API returned ' + resp.status + ': ' + body.substring(0, 300));
             }
 
             const json = await resp.json();
-            if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+            if (json.errors) {
+                if (silent) return;
+                throw new Error(json.errors.map(e => e.message).join('; '));
+            }
 
             const result = json.data.ListBookOfBusinessContacts;
             for (const c of result.items) {
@@ -194,16 +202,24 @@ const FETCH_SCRIPT: &str = r#"
             });
         }
 
-        // Strip internal _id before sending
         allMembers.forEach(m => delete m._id);
 
+        window.__compassBobFetched = true;
         window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(allMembers));
     } catch (e) {
-        window.location.href = 'http://compass-sync.localhost/error?message=' +
-            encodeURIComponent(e.toString());
+        if (!silent) {
+            window.location.href = 'http://compass-sync.localhost/error?message=' +
+                encodeURIComponent(e.toString());
+        }
     }
-})();
+};
+"#;
+
+/// Manual fetch script: resets flag and runs with error reporting.
+const FETCH_SCRIPT: &str = r#"
+window.__compassBobFetched = false;
+window.__compassFetchDevoted(false);
 "#;
 
 // ── GraphQL response types (for the reqwest fallback) ───────────────────────
@@ -317,6 +333,14 @@ impl CarrierPortal for DevotedPortal {
 
     fn fetch_script(&self) -> &str {
         FETCH_SCRIPT
+    }
+
+    fn auto_fetch(&self) -> bool {
+        true
+    }
+
+    fn sync_instruction(&self) -> &str {
+        "Log in to Devoted — data will sync automatically."
     }
 
     async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError> {
