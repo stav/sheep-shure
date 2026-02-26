@@ -98,6 +98,22 @@ pub fn run() {
             commands::get_portal_credentials,
             commands::delete_portal_credentials,
             commands::get_carriers_with_credentials,
+            commands::get_commission_rates,
+            commands::create_commission_rate,
+            commands::update_commission_rate,
+            commands::delete_commission_rate,
+            commands::get_commission_entries,
+            commands::delete_commission_batch,
+            commands::parse_commission_statement,
+            commands::import_commission_statement,
+            commands::reconcile_commissions,
+            commands::find_missing_commissions,
+            commands::get_reconciliation_entries,
+            commands::get_commission_summary,
+            commands::get_commission_deposits,
+            commands::create_commission_deposit,
+            commands::update_commission_deposit,
+            commands::delete_commission_deposit,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Compass application");

@@ -366,3 +366,153 @@ export interface SyncLogEntry {
   new_found: number;
   status: string;
 }
+
+// ── Commissions ──────────────────────────────────────────────────────────────
+
+export type CommissionStatus =
+  | "OK"
+  | "UNDERPAID"
+  | "OVERPAID"
+  | "MISSING"
+  | "ZERO_RATE"
+  | "UNMATCHED"
+  | "PENDING";
+
+export interface CommissionRate {
+  id: string;
+  carrier_id: string;
+  plan_type_code: string;
+  plan_year: number;
+  initial_rate: number;
+  renewal_rate: number;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CommissionRateListItem {
+  id: string;
+  carrier_id: string;
+  carrier_name: string;
+  plan_type_code: string;
+  plan_year: number;
+  initial_rate: number;
+  renewal_rate: number;
+  notes?: string;
+}
+
+export interface CreateCommissionRateInput {
+  carrier_id: string;
+  plan_type_code: string;
+  plan_year: number;
+  initial_rate: number;
+  renewal_rate: number;
+  notes?: string;
+}
+
+export interface UpdateCommissionRateInput {
+  carrier_id?: string;
+  plan_type_code?: string;
+  plan_year?: number;
+  initial_rate?: number;
+  renewal_rate?: number;
+  notes?: string;
+}
+
+export interface CommissionEntryListItem {
+  id: string;
+  client_id?: string;
+  client_name?: string;
+  carrier_name: string;
+  plan_type_code?: string;
+  commission_month: string;
+  statement_amount?: number;
+  paid_amount?: number;
+  member_name?: string;
+  is_initial?: number;
+  expected_rate?: number;
+  rate_difference?: number;
+  status?: CommissionStatus;
+  effective_date?: string;
+}
+
+export interface CommissionFilters {
+  carrier_id?: string;
+  commission_month?: string;
+  status?: string;
+  client_id?: string;
+  import_batch_id?: string;
+}
+
+export interface StatementImportResult {
+  total: number;
+  matched: number;
+  unmatched: number;
+  skipped: number;
+  errors: number;
+  batch_id: string;
+  unmatched_names: string[];
+  error_messages: string[];
+}
+
+export interface CommissionDepositListItem {
+  id: string;
+  carrier_id: string;
+  carrier_name: string;
+  deposit_month: string;
+  deposit_amount: number;
+  deposit_date?: string;
+  reference?: string;
+  notes?: string;
+  statement_total: number;
+  difference: number;
+}
+
+export interface CreateCommissionDepositInput {
+  carrier_id: string;
+  deposit_month: string;
+  deposit_amount: number;
+  deposit_date?: string;
+  reference?: string;
+  notes?: string;
+}
+
+export interface UpdateCommissionDepositInput {
+  carrier_id?: string;
+  deposit_month?: string;
+  deposit_amount?: number;
+  deposit_date?: string;
+  reference?: string;
+  notes?: string;
+}
+
+export interface ReconciliationRow {
+  id: string;
+  client_id?: string;
+  client_name?: string;
+  carrier_name: string;
+  plan_type_code?: string;
+  commission_month: string;
+  effective_date?: string;
+  is_initial?: number;
+  expected_rate?: number;
+  statement_amount?: number;
+  paid_amount?: number;
+  rate_difference?: number;
+  status?: CommissionStatus;
+  member_name?: string;
+}
+
+export interface CarrierMonthSummary {
+  carrier_id: string;
+  carrier_name: string;
+  commission_month: string;
+  total_expected: number;
+  total_statement: number;
+  total_paid: number;
+  deposit_amount?: number;
+  deposit_vs_paid?: number;
+  entry_count: number;
+  ok_count: number;
+  issue_count: number;
+}
