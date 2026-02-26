@@ -21,7 +21,7 @@ export function NewInPortalSection({
   const [importResult, setImportResult] = useState<ImportPortalResult | null>(null);
   const importMembers = useImportPortalMembers();
 
-  if (members.length === 0) return null;
+  if (members.length === 0 && !importResult) return null;
 
   const toggleSelect = (index: number) => {
     setSelectedIndices((prev) => {

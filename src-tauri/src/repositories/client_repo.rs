@@ -97,12 +97,13 @@ pub fn get_clients(
         "SELECT c.id, c.first_name, c.last_name, c.dob, cr.name, e.plan_name, c.is_active
          FROM clients c
          LEFT JOIN enrollments e ON e.client_id = c.id
-           AND e.is_active = 1
-           AND e.status_code IN ('ACTIVE', 'PENDING')
            AND e.id = (
              SELECT e2.id FROM enrollments e2
-             WHERE e2.client_id = c.id AND e2.is_active = 1 AND e2.status_code IN ('ACTIVE', 'PENDING')
-             ORDER BY e2.effective_date DESC LIMIT 1
+             WHERE e2.client_id = c.id AND e2.is_active = 1
+             ORDER BY
+               CASE WHEN e2.status_code IN ('ACTIVE', 'PENDING') THEN 0 ELSE 1 END,
+               e2.effective_date DESC
+             LIMIT 1
            )
          LEFT JOIN carriers cr ON e.carrier_id = cr.id
          {}

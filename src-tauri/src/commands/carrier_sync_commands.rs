@@ -23,6 +23,8 @@ pub async fn open_carrier_login(app: AppHandle, carrier_id: String) -> Result<St
 
         if current_host == login_host {
             let _ = existing.set_focus();
+            // Re-inject the fetch script so auto-fetch carriers re-sync
+            let _ = existing.eval(portal.fetch_script());
             return Ok(url);
         }
 
