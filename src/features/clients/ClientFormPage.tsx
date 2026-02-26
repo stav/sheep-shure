@@ -1,15 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useClient, useCreateClient, useUpdateClient } from "@/hooks/useClients";
+import { useClient, useCreateClient, useUpdateClient, useCheckClientDuplicates } from "@/hooks/useClients";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Save, ArrowLeft } from "lucide-react";
+import { Loader2, Save, ArrowLeft, AlertTriangle } from "lucide-react";
+import type { DuplicateCandidate } from "@/types";
 
 const clientSchema = z.object({
   first_name: z.string().min(1, "First name is required"),
@@ -53,6 +54,10 @@ export function ClientFormPage() {
   const { data: client, isLoading: clientLoading } = useClient(id);
   const createClient = useCreateClient();
   const updateClient = useUpdateClient();
+  const checkDuplicates = useCheckClientDuplicates();
+
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
   const {
     register,
@@ -97,31 +102,53 @@ export function ClientFormPage() {
     }
   }, [client, reset]);
 
+  const cleanFormData = (data: ClientFormData) => {
+    const phoneFields = new Set(["phone", "phone2"]);
+    return Object.fromEntries(
+      Object.entries(data).map(([k, v]) => [
+        k,
+        v === ""
+          ? null
+          : phoneFields.has(k) && typeof v === "string"
+            ? v.replace(/\D/g, "") || null
+            : k === "mbi" && typeof v === "string"
+              ? v.replace(/[\s-]/g, "").toUpperCase() || null
+              : v,
+      ])
+    );
+  };
+
+  const doCreate = async (data: ClientFormData) => {
+    const cleaned = cleanFormData(data);
+    const result = await createClient.mutateAsync(cleaned);
+    toast.success("Client created");
+    navigate(`/clients/${result.id}`);
+  };
+
   const onSubmit = async (data: ClientFormData) => {
     try {
-      // Clean empty strings to null, strip phone numbers to digits only
-      const phoneFields = new Set(["phone", "phone2"]);
-      const cleaned = Object.fromEntries(
-        Object.entries(data).map(([k, v]) => [
-          k,
-          v === ""
-            ? null
-            : phoneFields.has(k) && typeof v === "string"
-              ? v.replace(/\D/g, "") || null
-              : k === "mbi" && typeof v === "string"
-                ? v.replace(/[\s-]/g, "").toUpperCase() || null
-                : v,
-        ])
-      );
-
       if (isEditing && id) {
+        const cleaned = cleanFormData(data);
         await updateClient.mutateAsync({ id, input: cleaned });
         toast.success("Client updated");
         navigate(`/clients/${id}`);
       } else {
-        const result = await createClient.mutateAsync(cleaned);
-        toast.success("Client created");
-        navigate(`/clients/${result.id}`);
+        // Check for duplicates before creating
+        if (!showDuplicateWarning) {
+          const matches = await checkDuplicates.mutateAsync({
+            firstName: data.first_name,
+            lastName: data.last_name,
+            dob: data.dob || null,
+            mbi: data.mbi || null,
+          });
+          if (matches.length > 0) {
+            setDuplicates(matches);
+            setShowDuplicateWarning(true);
+            return;
+          }
+        }
+        setShowDuplicateWarning(false);
+        await doCreate(data);
       }
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to save client");
@@ -148,6 +175,68 @@ export function ClientFormPage() {
             : "New Client"}
         </h1>
       </div>
+
+      {showDuplicateWarning && duplicates.length > 0 && (
+        <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 shrink-0" />
+              <div className="space-y-3 flex-1">
+                <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                  Potential duplicate clients found
+                </p>
+                <div className="space-y-2">
+                  {duplicates.map((d) => (
+                    <div key={d.client_id} className="flex items-center justify-between rounded-md border border-yellow-200 bg-white dark:bg-background px-3 py-2 text-sm">
+                      <div>
+                        <span className="font-medium">{d.first_name} {d.last_name}</span>
+                        {d.dob && <span className="text-muted-foreground ml-2">DOB: {d.dob}</span>}
+                        {d.mbi && <span className="text-muted-foreground ml-2">MBI: {d.mbi}</span>}
+                        <span className="ml-2 text-xs text-yellow-700 dark:text-yellow-300">({d.match_tier.replace(/_/g, " ")})</span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(`/clients/${d.client_id}`)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowDuplicateWarning(false);
+                      setDuplicates([]);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={() => handleSubmit(async (data) => {
+                      try {
+                        await doCreate(data);
+                      } catch (err) {
+                        toast.error(typeof err === "string" ? err : "Failed to save client");
+                      }
+                    })()}
+                  >
+                    Create Anyway
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit, (errs) => {
         const first = Object.entries(errs)[0];

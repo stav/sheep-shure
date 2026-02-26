@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::models::{Client, ClientFilters, ClientListItem, CreateClientInput, UpdateClientInput, PaginatedResult};
 use crate::repositories::client_repo;
+use crate::services::matching::{self, DuplicateCandidate, DuplicateGroup};
 
 /// Validate MBI format: 11 characters, specific pattern
 fn validate_mbi(mbi: &str) -> Result<(), AppError> {
@@ -56,6 +57,22 @@ pub fn delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
 
 pub fn hard_delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
     client_repo::hard_delete_client(conn, id)
+}
+
+/// Check for potential duplicate clients before creating a new one.
+pub fn check_client_duplicates(
+    conn: &Connection,
+    first_name: &str,
+    last_name: &str,
+    dob: Option<&str>,
+    mbi: Option<&str>,
+) -> Result<Vec<DuplicateCandidate>, AppError> {
+    Ok(matching::check_for_duplicates(conn, first_name, last_name, dob, mbi))
+}
+
+/// Scan all active clients for duplicate groups.
+pub fn find_duplicate_clients(conn: &Connection) -> Result<Vec<DuplicateGroup>, AppError> {
+    matching::find_duplicate_clients(conn)
 }
 
 /// Merge `source_id` into `keeper_id`: move all enrollments and conversations

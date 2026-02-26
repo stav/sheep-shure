@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tauriInvoke } from "@/lib/tauri";
-import type { Client, ClientListItem, ClientFilters, PaginatedResult, Carrier } from "@/types";
+import type { Client, ClientListItem, ClientFilters, PaginatedResult, Carrier, DuplicateCandidate, DuplicateGroup } from "@/types";
 
 export function useClients(filters: ClientFilters, page: number, perPage: number) {
   return useQuery({
@@ -61,6 +61,43 @@ export function useHardDeleteClient() {
     mutationFn: (id: string) => tauriInvoke("hard_delete_client", { id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useCheckClientDuplicates() {
+  return useMutation({
+    mutationFn: (input: {
+      firstName: string;
+      lastName: string;
+      dob?: string | null;
+      mbi?: string | null;
+    }) =>
+      tauriInvoke<DuplicateCandidate[]>("check_client_duplicates", {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        dob: input.dob || null,
+        mbi: input.mbi || null,
+      }),
+  });
+}
+
+export function useFindDuplicateClients() {
+  return useQuery({
+    queryKey: ["duplicate-clients"],
+    queryFn: () => tauriInvoke<DuplicateGroup[]>("find_duplicate_clients"),
+    enabled: false,
+  });
+}
+
+export function useMergeClients() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ keeperId, sourceId }: { keeperId: string; sourceId: string }) =>
+      tauriInvoke<Client>("merge_clients", { keeperId, sourceId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["duplicate-clients"] });
     },
   });
 }

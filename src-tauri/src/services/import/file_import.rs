@@ -857,42 +857,21 @@ fn find_existing_client(
     mbi: &Option<String>,
     get_val: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    // 1. Try MBI
-    if let Some(ref mbi_val) = mbi {
-        if let Ok(id) = conn.query_row(
-            "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
-            rusqlite::params![mbi_val],
-            |row| row.get::<_, String>(0),
-        ) {
-            return Some(id);
-        }
-    }
+    use crate::services::matching::{self, MatchOptions};
 
-    // 2. Try name + DOB
-    if let Some(dob_val) = get_val("dob") {
-        if let Ok(id) = conn.query_row(
-            "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
-            rusqlite::params![first_name, last_name, dob_val],
-            |row| row.get::<_, String>(0),
-        ) {
-            return Some(id);
-        }
-    }
-
-    // 3. Name-only fallback: match if exactly one active client
-    let mut stmt = conn.prepare(
-        "SELECT id FROM clients WHERE LOWER(first_name) = LOWER(?1) AND LOWER(last_name) = LOWER(?2) AND is_active = 1"
-    ).ok()?;
-    let ids: Vec<String> = stmt
-        .query_map(rusqlite::params![first_name, last_name], |row| row.get(0))
-        .ok()?
-        .filter_map(|r| r.ok())
-        .collect();
-    if ids.len() == 1 {
-        Some(ids.into_iter().next().unwrap())
-    } else {
-        None
-    }
+    let dob = get_val("dob");
+    matching::find_client_match(
+        conn,
+        mbi.as_deref(),
+        first_name,
+        last_name,
+        dob.as_deref(),
+        &MatchOptions {
+            allow_name_only_unique: true,
+            ..MatchOptions::default()
+        },
+    )
+    .map(|m| m.client_id)
 }
 
 fn find_mapped_index(

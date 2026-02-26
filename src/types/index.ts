@@ -245,6 +245,31 @@ export interface UpdateConversationEntryInput {
   is_active?: boolean;
 }
 
+// ── Duplicate Detection ──────────────────────────────────────────────────────
+
+export interface DuplicateCandidate {
+  client_id: string;
+  first_name: string;
+  last_name: string;
+  dob?: string;
+  mbi?: string;
+  match_tier: string;
+}
+
+export interface DuplicateGroupClient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  dob?: string;
+  mbi?: string;
+  is_suggested_keeper: boolean;
+}
+
+export interface DuplicateGroup {
+  clients: DuplicateGroupClient[];
+  match_tier: string;
+}
+
 // ── Carrier Sync ──────────────────────────────────────────────────────────────
 
 export interface PortalMember {

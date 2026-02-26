@@ -7,7 +7,7 @@ use crate::models::{
     PortalMember, SyncDisenrollment, SyncLogEntry, SyncMatch, SyncResult,
 };
 use crate::models::CreateProviderInput;
-use crate::services::{client_service, conversation_service, enrollment_service, provider_service};
+use crate::services::{client_service, conversation_service, enrollment_service, matching, provider_service};
 
 /// Internal struct for matching local enrollments against portal data.
 struct LocalEnrollment {
@@ -47,6 +47,21 @@ pub fn run_sync(
                 portal_member: pm.clone(),
                 match_tier: tier.to_string(),
             });
+        } else if let Some(client_id) = find_existing_client(conn, pm) {
+            // Matched an existing client (active or inactive) but no active enrollment
+            let client_name: String = conn
+                .query_row(
+                    "SELECT first_name || ' ' || last_name FROM clients WHERE id = ?1",
+                    params![client_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|_| format!("{} {}", pm.first_name, pm.last_name));
+            matched_members.push(SyncMatch {
+                client_name,
+                client_id,
+                portal_member: pm.clone(),
+                match_tier: "existing_client".to_string(),
+            });
         } else {
             new_in_portal.push(pm.clone());
         }
@@ -66,7 +81,7 @@ pub fn run_sync(
         }
     }
 
-    let matched = matched_enrollment_ids.len();
+    let matched = matched_members.len();
 
     // 4. Log the sync (disenrolled=0 because disenrollment is now user-confirmed)
     log_sync(conn, carrier_id, portal_count, matched, 0, new_in_portal.len())?;
@@ -115,14 +130,13 @@ fn get_local_enrollments(conn: &Connection, carrier_id: &str) -> Result<Vec<Loca
 /// Strategy (all comparisons lowercased):
 ///   1. Last name must match exactly.
 ///   2. Then accept if ANY of these hold:
-///      a. First name matches exactly
-///      b. First name fuzzy-matches (one starts with the other, or edit distance ≤ 2)
-///         AND DOB matches
-///      c. MBI matches AND DOB matches
+///      a. First name matches exactly (normalized)
+///      b. First name fuzzy-matches + DOB matches
+///      c. MBI matches + DOB matches
 fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Option<(&'a LocalEnrollment, &'static str)> {
     let p_last = portal.last_name.to_ascii_lowercase();
     let p_first = portal.first_name.to_ascii_lowercase();
-    let p_dob_norm = portal.dob.as_deref().and_then(normalize_date);
+    let p_dob_norm = portal.dob.as_deref().and_then(matching::normalize_date);
     let p_mbi = portal.member_id.as_deref();
 
     // Filter to last-name matches first
@@ -137,7 +151,7 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
 
     // Tier 1: exact first name match (strongest — no DOB needed)
     if let Some(m) = candidates.iter().find(|le| {
-        normalize_first_name(&le.client_first_name) == normalize_first_name(&p_first)
+        matching::normalize_first_name(&le.client_first_name) == matching::normalize_first_name(&p_first)
     }) {
         return Some((m, "exact"));
     }
@@ -145,8 +159,8 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
     // Tier 2: fuzzy first name + DOB
     if let Some(ref dob) = p_dob_norm {
         if let Some(m) = candidates.iter().find(|le| {
-            fuzzy_first_name(&le.client_first_name, &p_first)
-                && le.client_dob.as_deref().and_then(normalize_date).as_deref() == Some(dob.as_str())
+            matching::fuzzy_first_name(&le.client_first_name, &p_first)
+                && le.client_dob.as_deref().and_then(matching::normalize_date).as_deref() == Some(dob.as_str())
         }) {
             return Some((m, "fuzzy"));
         }
@@ -157,7 +171,7 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
         if !mbi.is_empty() {
             if let Some(m) = candidates.iter().find(|le| {
                 le.client_mbi.as_deref() == Some(mbi)
-                    && le.client_dob.as_deref().and_then(normalize_date).as_deref() == Some(dob.as_str())
+                    && le.client_dob.as_deref().and_then(matching::normalize_date).as_deref() == Some(dob.as_str())
             }) {
                 return Some((m, "mbi"));
             }
@@ -165,105 +179,6 @@ fn find_match<'a>(locals: &'a [LocalEnrollment], portal: &PortalMember) -> Optio
     }
 
     None
-}
-
-/// Strip a trailing single-letter middle initial from a first name.
-/// e.g. "Brian L" → "brian", "Brian" → "brian"
-fn normalize_first_name(name: &str) -> String {
-    let lower = name.to_ascii_lowercase().trim().to_string();
-    // If the name ends with " X" where X is a single letter, strip it
-    if lower.len() >= 3 {
-        let bytes = lower.as_bytes();
-        let len = bytes.len();
-        if bytes[len - 2] == b' ' && bytes[len - 1].is_ascii_alphabetic() {
-            return lower[..len - 2].to_string();
-        }
-    }
-    lower
-}
-
-/// Normalize a date string to ISO "YYYY-MM-DD" regardless of input format.
-/// Handles: "2026-02-15", "02/15/2026", "Feb 15 2026", "Aug 12 1972 12:00AM", etc.
-fn normalize_date(raw: &str) -> Option<String> {
-    let s = raw.trim();
-    if s.is_empty() {
-        return None;
-    }
-
-    // Already ISO: "YYYY-MM-DD"
-    if s.len() >= 10 && s.as_bytes()[4] == b'-' && s.as_bytes()[7] == b'-' {
-        return Some(s[..10].to_string());
-    }
-
-    // "MM/DD/YYYY"
-    if s.len() >= 10 && s.as_bytes()[2] == b'/' && s.as_bytes()[5] == b'/' {
-        let mm = &s[..2];
-        let dd = &s[3..5];
-        let yyyy = &s[6..10];
-        if mm.parse::<u32>().is_ok() && dd.parse::<u32>().is_ok() && yyyy.parse::<u32>().is_ok() {
-            return Some(format!("{}-{}-{}", yyyy, mm, dd));
-        }
-    }
-
-    // "Mon DD YYYY ..." e.g. "Aug 12 1972 12:00AM"
-    let months = [
-        ("jan", "01"), ("feb", "02"), ("mar", "03"), ("apr", "04"),
-        ("may", "05"), ("jun", "06"), ("jul", "07"), ("aug", "08"),
-        ("sep", "09"), ("oct", "10"), ("nov", "11"), ("dec", "12"),
-    ];
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.len() >= 3 {
-        let mon = parts[0].to_ascii_lowercase();
-        if let Some(&(_, mm)) = months.iter().find(|&&(m, _)| mon.starts_with(m)) {
-            if let (Ok(dd), Ok(yyyy)) = (parts[1].trim_end_matches(',').parse::<u32>(), parts[2].parse::<u32>()) {
-                if yyyy > 1900 && dd <= 31 {
-                    return Some(format!("{}-{}-{:02}", yyyy, mm, dd));
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Fuzzy first-name comparison.
-/// Normalizes both (strip middle initial, lowercase) then checks prefix or edit distance.
-fn fuzzy_first_name(local: &str, portal: &str) -> bool {
-    let a = normalize_first_name(local);
-    let b = normalize_first_name(portal);
-
-    // After normalization they might match exactly
-    if a == b {
-        return true;
-    }
-
-    // Prefix match (e.g. "rob" vs "robert", "mike" vs "michael")
-    if a.len() >= 3 && b.len() >= 3 && (a.starts_with(&*b) || b.starts_with(&*a)) {
-        return true;
-    }
-
-    levenshtein(&a, &b) <= 2
-}
-
-/// Simple Levenshtein distance (fine for short first names).
-fn levenshtein(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let (m, n) = (a.len(), b.len());
-
-    let mut prev = (0..=n).collect::<Vec<_>>();
-    let mut curr = vec![0; n + 1];
-
-    for i in 1..=m {
-        curr[0] = i;
-        for j in 1..=n {
-            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
-            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
-
-    prev[n]
 }
 
 /// Mark an enrollment as disenrolled (involuntary).
@@ -300,56 +215,21 @@ fn log_sync(
 }
 
 /// Find an existing client by MBI or by (first_name, last_name, DOB).
-/// Returns the client ID if found.
+/// Searches both active and inactive clients so that a re-appearing member
+/// reuses the existing record instead of creating a duplicate.
 fn find_existing_client(
     conn: &Connection,
     member: &PortalMember,
 ) -> Option<String> {
-    // Try MBI match first
-    if let Some(ref mbi) = member.mbi {
-        if !mbi.is_empty() {
-            if let Ok(id) = conn.query_row(
-                "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
-                params![mbi],
-                |row| row.get::<_, String>(0),
-            ) {
-                return Some(id);
-            }
-        }
-    }
-
-    // Name + DOB fallback
-    let dob_normalized = member.dob.as_deref().and_then(normalize_date);
-    if let Some(ref dob) = dob_normalized {
-        // Query all active clients with matching last name, then compare normalized values
-        let mut stmt = conn
-            .prepare("SELECT id, first_name, dob FROM clients WHERE LOWER(last_name) = LOWER(?1) AND is_active = 1")
-            .ok()?;
-        let rows: Vec<(String, String, Option<String>)> = stmt
-            .query_map(params![member.last_name], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
-            .ok()?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        for (id, db_first, db_dob) in &rows {
-            let db_dob_norm = db_dob.as_deref().and_then(normalize_date);
-            if db_dob_norm.as_deref() != Some(dob.as_str()) {
-                continue;
-            }
-            // Exact first name
-            if normalize_first_name(db_first) == normalize_first_name(&member.first_name) {
-                return Some(id.clone());
-            }
-            // Fuzzy first name
-            if fuzzy_first_name(db_first, &member.first_name) {
-                return Some(id.clone());
-            }
-        }
-    }
-
-    None
+    matching::find_client_match(
+        conn,
+        member.mbi.as_deref(),
+        &member.first_name,
+        &member.last_name,
+        member.dob.as_deref(),
+        &matching::MatchOptions::default(),
+    )
+    .map(|m| m.client_id)
 }
 
 /// Import portal members as new clients with enrollments linked to the carrier.
@@ -362,8 +242,13 @@ pub fn import_portal_members(
     let mut errors = Vec::new();
 
     for member in members {
-        // Check for an existing client before creating a new one
+        // Check for an existing client (active or inactive) before creating a new one
         let client_id = if let Some(existing_id) = find_existing_client(conn, member) {
+            // Reactivate if the matched client is inactive
+            let _ = conn.execute(
+                "UPDATE clients SET is_active = 1, updated_at = datetime('now') WHERE id = ?1 AND is_active = 0",
+                params![existing_id],
+            );
             existing_id
         } else {
             let client_input = CreateClientInput {

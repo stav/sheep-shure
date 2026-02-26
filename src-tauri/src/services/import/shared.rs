@@ -1,8 +1,11 @@
-use chrono::NaiveDate;
 use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::services::matching::{self, MatchOptions};
+
+// Re-export normalization functions so existing `use super::shared::` paths work
+pub use matching::{normalize_date, normalize_mbi, normalize_phone};
 
 /// All client fields as Option<String> for unified upsert.
 #[derive(Default)]
@@ -40,65 +43,7 @@ pub enum UpsertAction {
     Skipped,
 }
 
-/// Normalize a date string from various formats into YYYY-MM-DD.
-pub fn normalize_date(raw: &str) -> Option<String> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-
-    // Try ISO datetime: 2025-07-01T00:00:00 or with fractional seconds
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S") {
-        return Some(dt.format("%Y-%m-%d").to_string());
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f") {
-        return Some(dt.format("%Y-%m-%d").to_string());
-    }
-    // Already ISO date
-    if let Ok(d) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
-        return Some(d.format("%Y-%m-%d").to_string());
-    }
-    // US format: 07/06/1960
-    if let Ok(d) = NaiveDate::parse_from_str(raw, "%m/%d/%Y") {
-        return Some(d.format("%Y-%m-%d").to_string());
-    }
-    // LeadsMaster: "Sep 25 1958 12:00AM" — handle variable spacing
-    let compressed = raw.replace("  ", " ");
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&compressed, "%b %d %Y %I:%M%p") {
-        return Some(dt.format("%Y-%m-%d").to_string());
-    }
-    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&compressed, "%b %d %Y %I:%M%P") {
-        return Some(dt.format("%Y-%m-%d").to_string());
-    }
-
-    None
-}
-
-/// Normalize MBI: strip dashes, validate 11 alphanumeric chars.
-pub fn normalize_mbi(raw: &str) -> Option<String> {
-    let cleaned: String = raw.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
-    if cleaned.len() == 11 {
-        Some(cleaned)
-    } else {
-        None
-    }
-}
-
-/// Normalize phone: strip non-digits, validate 10 digits.
-pub fn normalize_phone(raw: &str) -> Option<String> {
-    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
-    // Handle 11-digit numbers starting with 1
-    if digits.len() == 11 && digits.starts_with('1') {
-        return Some(digits[1..].to_string());
-    }
-    if digits.len() == 10 {
-        Some(digits)
-    } else {
-        None
-    }
-}
-
-/// Find an existing client by MBI first, then by name+DOB.
+/// Find an existing client by MBI first, then by name+DOB (with fuzzy matching).
 pub fn find_client(
     conn: &Connection,
     mbi: Option<&str>,
@@ -106,45 +51,8 @@ pub fn find_client(
     last_name: &str,
     dob: Option<&str>,
 ) -> Option<String> {
-    // Try MBI match first
-    if let Some(mbi_val) = mbi {
-        if !mbi_val.is_empty() {
-            if let Ok(id) = conn.query_row(
-                "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
-                rusqlite::params![mbi_val],
-                |row| row.get::<_, String>(0),
-            ) {
-                return Some(id);
-            }
-        }
-    }
-
-    // Name + DOB fallback
-    if let Some(dob_val) = dob {
-        if !dob_val.is_empty() {
-            // Try exact match first
-            if let Ok(id) = conn.query_row(
-                "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
-                rusqlite::params![first_name, last_name, dob_val],
-                |row| row.get::<_, String>(0),
-            ) {
-                return Some(id);
-            }
-            // Try with first name as prefix (e.g. "Kenneth E" matches "Kenneth")
-            let first_base = first_name.split_whitespace().next().unwrap_or(first_name);
-            if first_base != first_name {
-                if let Ok(id) = conn.query_row(
-                    "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
-                    rusqlite::params![first_base, last_name, dob_val],
-                    |row| row.get::<_, String>(0),
-                ) {
-                    return Some(id);
-                }
-            }
-        }
-    }
-
-    None
+    matching::find_client_match(conn, mbi, first_name, last_name, dob, &MatchOptions::default())
+        .map(|m| m.client_id)
 }
 
 /// Upsert a client: insert if new, or fill NULL/empty fields on existing record.

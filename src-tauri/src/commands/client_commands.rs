@@ -2,6 +2,7 @@ use tauri::State;
 use crate::db::DbState;
 use crate::models::{Client, ClientFilters, ClientListItem, CreateClientInput, PaginatedResult, UpdateClientInput};
 use crate::services::client_service;
+use crate::services::matching::{DuplicateCandidate, DuplicateGroup};
 
 #[tauri::command]
 pub fn get_clients(
@@ -54,6 +55,32 @@ pub fn hard_delete_client(id: String, state: State<'_, DbState>) -> Result<(), S
 pub fn merge_clients(keeper_id: String, source_id: String, state: State<'_, DbState>) -> Result<Client, String> {
     state.with_conn(|conn| {
         client_service::merge_clients(conn, &keeper_id, &source_id)
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn check_client_duplicates(
+    first_name: String,
+    last_name: String,
+    dob: Option<String>,
+    mbi: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<Vec<DuplicateCandidate>, String> {
+    state.with_conn(|conn| {
+        client_service::check_client_duplicates(
+            conn,
+            &first_name,
+            &last_name,
+            dob.as_deref(),
+            mbi.as_deref(),
+        )
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn find_duplicate_clients(state: State<'_, DbState>) -> Result<Vec<DuplicateGroup>, String> {
+    state.with_conn(|conn| {
+        client_service::find_duplicate_clients(conn)
     }).map_err(|e| e.to_string())
 }
 

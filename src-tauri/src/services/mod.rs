@@ -9,5 +9,6 @@ pub mod import_service {
     pub use super::import::*;
 }
 mod import;
+pub mod matching;
 pub mod provider_service;
 pub mod report_service;

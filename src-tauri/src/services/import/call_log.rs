@@ -3,6 +3,7 @@ use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::error::AppError;
+use crate::services::matching;
 use super::file_import::ImportRowDetail;
 
 #[derive(serde::Serialize)]
@@ -141,37 +142,27 @@ pub fn import_call_log_from_db(
             src.call_date.as_deref().unwrap_or("no date"),
         );
 
-        // Match lead to Compass client: MBI first, then name+DOB fallback
-        let client_id: Option<String> = if let Some(ref mbi) = src.lead_mbi {
-            if !mbi.trim().is_empty() {
-                app_conn
-                    .query_row(
-                        "SELECT id FROM clients WHERE mbi = ?1 AND is_active = 1",
-                        rusqlite::params![mbi.trim()],
-                        |row| row.get(0),
-                    )
-                    .ok()
-            } else {
+        // Match lead to Compass client using canonical matching
+        let client_id: Option<String> = {
+            let mbi = src.lead_mbi.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+            let first = src.lead_first_name.as_deref().unwrap_or("").trim();
+            let last = src.lead_last_name.as_deref().unwrap_or("").trim();
+            let dob = src.lead_dob.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+
+            if first.is_empty() && last.is_empty() && mbi.is_none() {
                 None
-            }
-        } else {
-            None
-        }
-        .or_else(|| {
-            let first = src.lead_first_name.as_deref()?.trim();
-            let last = src.lead_last_name.as_deref()?.trim();
-            let dob = src.lead_dob.as_deref()?.trim();
-            if first.is_empty() || last.is_empty() || dob.is_empty() {
-                return None;
-            }
-            app_conn
-                .query_row(
-                    "SELECT id FROM clients WHERE first_name = ?1 AND last_name = ?2 AND dob = ?3 AND is_active = 1",
-                    rusqlite::params![first, last, dob],
-                    |row| row.get(0),
+            } else {
+                matching::find_client_match(
+                    app_conn,
+                    mbi,
+                    first,
+                    last,
+                    dob,
+                    &matching::MatchOptions::default(),
                 )
-                .ok()
-        });
+                .map(|m| m.client_id)
+            }
+        };
 
         let client_id = match client_id {
             Some(id) => id,
