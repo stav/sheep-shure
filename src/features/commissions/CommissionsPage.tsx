@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ReconciliationTab } from "./ReconciliationTab";
 import { CarrierSummaryTab } from "./CarrierSummaryTab";
 import { StatementImportTab } from "./StatementImportTab";
@@ -27,28 +27,29 @@ export function CommissionsPage() {
         <TabsTrigger value="rates">Rates</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="reconciliation" className="mt-4">
+      {/* Render all panels always; hide inactive ones so state is preserved */}
+      <div className={activeTab === "reconciliation" ? "mt-4" : "hidden"}>
         <ReconciliationTab
           initialCarrierId={drillCarrierId}
           initialMonth={drillMonth}
         />
-      </TabsContent>
+      </div>
 
-      <TabsContent value="summary" className="mt-4">
+      <div className={activeTab === "summary" ? "mt-4" : "hidden"}>
         <CarrierSummaryTab onDrillDown={handleDrillDown} />
-      </TabsContent>
+      </div>
 
-      <TabsContent value="import" className="mt-4">
+      <div className={activeTab === "import" ? "mt-4" : "hidden"}>
         <StatementImportTab />
-      </TabsContent>
+      </div>
 
-      <TabsContent value="deposits" className="mt-4">
+      <div className={activeTab === "deposits" ? "mt-4" : "hidden"}>
         <DepositsTab />
-      </TabsContent>
+      </div>
 
-      <TabsContent value="rates" className="mt-4">
+      <div className={activeTab === "rates" ? "mt-4" : "hidden"}>
         <RatesTab />
-      </TabsContent>
+      </div>
     </Tabs>
   );
 }
