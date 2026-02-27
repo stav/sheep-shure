@@ -10,6 +10,9 @@ export function useKeyboardShortcuts() {
       if (!e.ctrlKey && !e.metaKey) return;
 
       switch (e.key) {
+        case "f":
+          // Let FindInPage component handle Ctrl+F
+          break;
         case "n":
           e.preventDefault();
           navigate("/clients/new");

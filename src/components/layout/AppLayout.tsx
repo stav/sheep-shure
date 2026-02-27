@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { CommandPalette } from "./CommandPalette";
+import { FindInPage } from "./FindInPage";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useZoom } from "@/hooks/useZoom";
 
@@ -338,6 +339,7 @@ export function AppLayout() {
         </div>
       </div>
       <CommandPalette />
+      <FindInPage />
     </TooltipProvider>
   );
 }
