@@ -101,7 +101,8 @@ export function StatementImportTab() {
   const [result, setResult] = useState<StatementImportResult | null>(null);
 
   // Humana fetch state
-  const [fetchMonth, setFetchMonth] = useState("");
+  const [fetchFromMonth, setFetchFromMonth] = useState("");
+  const [fetchThruMonth, setFetchThruMonth] = useState("");
   const [fetchPhase, setFetchPhase] = useState<FetchPhase>("idle");
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchResults, setFetchResults] = useState<StatementImportResult[]>([]);
@@ -140,29 +141,18 @@ export function StatementImportTab() {
         return;
       }
 
-      // Import each CSV sequentially
-      const results: StatementImportResult[] = [];
-      const skipped: string[] = [];
+      // Import each CSV sequentially, accumulating results across events
       let idx = 0;
 
       function importNext() {
         if (idx >= statements.length) {
-          setFetchResults(results);
-          if (skipped.length > 0) {
-            setFetchError(`Skipped ${skipped.length} statement(s) with no month detected: ${skipped.join(", ")}. Set a fallback month and retry.`);
-          }
           setFetchPhase("idle");
           return;
         }
 
         const stmt = statements[idx];
-        const month = stmt.month || fetchMonth || "";
-        if (!month) {
-          skipped.push(`Statement ${idx + 1}`);
-          idx++;
-          importNext();
-          return;
-        }
+        // Month comes from the JS-scraped date or the backend's CommRunDt detection
+        const month = stmt.month || "";
 
         importCsv.mutate(
           {
@@ -172,13 +162,12 @@ export function StatementImportTab() {
           },
           {
             onSuccess: (data) => {
-              results.push(data);
+              setFetchResults((prev) => [...prev, data]);
               idx++;
               importNext();
             },
             onError: (err) => {
-              setFetchError(`Statement ${idx + 1} import failed: ${err}`);
-              setFetchResults(results);
+              setFetchError(`Import failed: ${err}`);
               setFetchPhase("idle");
             },
           }
@@ -187,7 +176,7 @@ export function StatementImportTab() {
 
       importNext();
     },
-    [humanaCarrier, fetchMonth, importCsv]
+    [humanaCarrier, importCsv]
   );
 
   // Listen for events from the carrier webview
@@ -226,12 +215,26 @@ export function StatementImportTab() {
     });
   };
 
+  /** Convert YYYY-MM pair to MM/DD/YYYY range (first of from-month to last of thru-month) */
+  const monthToDateRange = (from: string, thru: string) => {
+    const [fy, fm] = from.split("-").map(Number);
+    const [ty, tm] = thru.split("-").map(Number);
+    const fromDate = `${String(fm).padStart(2, "0")}/01/${fy}`;
+    // Last day of thru month
+    const lastDay = new Date(ty, tm, 0).getDate();
+    const thruDate = `${String(tm).padStart(2, "0")}/${lastDay}/${ty}`;
+    return { fromDate, thruDate };
+  };
+
   const handleFetchStatements = () => {
+    if (!fetchFromMonth || !fetchThruMonth) return;
     setFetchError(null);
+    setFetchResults([]);
     setLogEntries([]);
     setShowLog(true);
     setFetchPhase("fetching");
-    triggerFetch.mutate(undefined, {
+    const { fromDate, thruDate } = monthToDateRange(fetchFromMonth, fetchThruMonth);
+    triggerFetch.mutate({ fromDate, thruDate }, {
       onError: (err) => {
         setFetchError(String(err));
         setFetchPhase("idle");
@@ -288,15 +291,51 @@ export function StatementImportTab() {
                   Open Humana Portal
                 </Button>
                 <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground whitespace-nowrap">Fallback month:</Label>
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">From:</Label>
                   <Input
                     type="month"
-                    value={fetchMonth}
-                    onChange={(e) => setFetchMonth(e.target.value)}
+                    value={fetchFromMonth}
+                    onChange={(e) => setFetchFromMonth(e.target.value)}
                     className="w-40 h-8"
                   />
                 </div>
-                <Button onClick={handleFetchStatements}>
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground whitespace-nowrap">To:</Label>
+                  <Input
+                    type="month"
+                    value={fetchThruMonth}
+                    onChange={(e) => setFetchThruMonth(e.target.value)}
+                    className="w-40 h-8"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  {[
+                    { label: "3mo", months: 3 },
+                    { label: "6mo", months: 6 },
+                    { label: "12mo", months: 12 },
+                  ].map(({ label, months }) => (
+                    <Button
+                      key={label}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        const now = new Date();
+                        const thru = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+                        const from = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+                        const fromStr = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}`;
+                        setFetchFromMonth(fromStr);
+                        setFetchThruMonth(thru);
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  onClick={handleFetchStatements}
+                  disabled={!fetchFromMonth || !fetchThruMonth}
+                >
                   Fetch Statements
                 </Button>
               </>
@@ -344,9 +383,17 @@ export function StatementImportTab() {
             <div className="space-y-2">
               {fetchResults.map((r, i) => (
                 <div key={i} className="grid grid-cols-5 gap-4 text-sm rounded border p-3">
-                  <div>
+                  <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">Total:</span>{" "}
                     <span className="font-medium">{r.total}</span>
+                    <button
+                      onClick={() => deleteBatch.mutate(r.batch_id)}
+                      disabled={deleteBatch.isPending}
+                      className="ml-1 text-red-400 hover:text-red-600 disabled:opacity-50"
+                      title="Undo import"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Matched:</span>{" "}
@@ -365,7 +412,7 @@ export function StatementImportTab() {
                     <span className="font-medium text-red-600">{r.errors}</span>
                   </div>
                   {r.unmatched_names.length > 0 && (
-                    <div className="col-span-4">
+                    <div className="col-span-5">
                       <p className="text-xs font-medium mb-1">Unmatched:</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside">
                         {r.unmatched_names.map((name, j) => (
@@ -374,17 +421,6 @@ export function StatementImportTab() {
                       </ul>
                     </div>
                   )}
-                  <div className="col-span-5 flex items-center gap-3">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteBatch.mutate(r.batch_id)}
-                      disabled={deleteBatch.isPending}
-                    >
-                      <Trash2 className="mr-2 h-3 w-3" />
-                      Undo
-                    </Button>
-                  </div>
                   <div className="col-span-5">
                     <BatchEntryList batchId={r.batch_id} />
                   </div>
@@ -459,9 +495,17 @@ export function StatementImportTab() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-4 gap-4 text-sm">
-              <div>
+              <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground">Total Rows:</span>{" "}
                 <span className="font-medium">{result.total}</span>
+                <button
+                  onClick={() => deleteBatch.mutate(result.batch_id)}
+                  disabled={deleteBatch.isPending}
+                  className="ml-1 text-red-400 hover:text-red-600 disabled:opacity-50"
+                  title="Undo import"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
               <div>
                 <span className="text-muted-foreground">Matched:</span>{" "}
@@ -498,16 +542,6 @@ export function StatementImportTab() {
                 </ul>
               </div>
             )}
-
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => deleteBatch.mutate(result.batch_id)}
-              disabled={deleteBatch.isPending}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Undo Import
-            </Button>
 
             <BatchEntryList batchId={result.batch_id} />
           </CardContent>

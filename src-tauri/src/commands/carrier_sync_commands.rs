@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl, webview::PageLoadEvent};
 
 use crate::carrier_sync;
 use crate::db::DbState;
@@ -100,6 +100,7 @@ pub async fn open_carrier_login(
         }
     }
 
+    let page_load_handle = app.clone();
     let nav_handle = app.clone();
     let dl_handle = app.clone();
     let dl_log_handle = app.clone();
@@ -115,8 +116,10 @@ pub async fn open_carrier_login(
         .initialization_script(&combined_script)
         .on_navigation(move |nav_url| {
             let host = nav_url.host_str().unwrap_or("");
+            tracing::debug!("[navigation] url={}, host={}", nav_url, host);
             if host == "compass-sync.localhost" {
                 let path = nav_url.path();
+                tracing::info!("[navigation] compass-sync intercepted: path={}, full={}", path, nav_url);
                 if path == "/data" {
                     if let Some(members_val) = nav_url.query_pairs().find(|(k, _)| k == "members") {
                         let _ = nav_handle.emit("carrier-sync-data", members_val.1.to_string());
@@ -135,6 +138,19 @@ pub async fn open_carrier_login(
                             *nav_month.lock().unwrap() = Some(month_str);
                         }
                     }
+                } else if path == "/page-ready" {
+                    // Poll-based readiness signal from commission fetch
+                    let csv_count = nav_url.query_pairs()
+                        .find(|(k, _)| k == "csv")
+                        .map(|(_, v)| v.to_string())
+                        .unwrap_or_default();
+                    tracing::info!("[navigation] ★ page-ready signal: csv_count={}", csv_count);
+                    emit_log(&nav_handle, "info", "fetch",
+                        &format!("Results page detected: {} CSV links found", csv_count), None);
+                    match nav_handle.emit("carrier-page-ready", csv_count.clone()) {
+                        Ok(_) => tracing::info!("[navigation] carrier-page-ready emitted OK (csv={})", csv_count),
+                        Err(e) => tracing::error!("[navigation] Failed to emit carrier-page-ready: {}", e),
+                    }
                 } else if path == "/error" {
                     if let Some(err_val) = nav_url.query_pairs().find(|(k, _)| k == "message") {
                         emit_log(&nav_handle, "error", "portal", &err_val.1, None);
@@ -145,28 +161,55 @@ pub async fn open_carrier_login(
             }
             true
         })
+        .on_page_load(move |_window, payload| {
+            match payload.event() {
+                PageLoadEvent::Started => {
+                    tracing::info!("[page-load] STARTED: {}", payload.url());
+                }
+                PageLoadEvent::Finished => {
+                    tracing::info!("[page-load] FINISHED: {}", payload.url());
+                    tracing::info!("[page-load] Emitting carrier-page-loaded event");
+                    match page_load_handle.emit("carrier-page-loaded", ()) {
+                        Ok(_) => tracing::info!("[page-load] carrier-page-loaded emitted OK"),
+                        Err(e) => tracing::error!("[page-load] Failed to emit carrier-page-loaded: {}", e),
+                    }
+                }
+                // PageLoadEvent is exhaustive (Started + Finished only)
+            }
+        })
         .on_download(move |_webview, event| {
             use tauri::webview::DownloadEvent;
             match event {
                 DownloadEvent::Requested { url, destination } => {
                     let fname = format!("compass-dl-{}.csv", std::process::id());
                     let tmp = std::env::temp_dir().join(fname);
-                    tracing::info!("Download requested: url={}, dest={:?}", url, tmp);
-                    emit_log(&dl_log_handle, "info", "download", "Download started", None);
+                    let pending = dl_month.lock().unwrap().clone();
+                    tracing::info!("[download] REQUESTED: url={}", url);
+                    tracing::info!("[download]   dest={:?}, pending_month={:?}", tmp, pending);
+                    emit_log(&dl_log_handle, "info", "download",
+                        &format!("Download started (pending month: {:?})", pending),
+                        Some(url.as_str()));
                     *destination = tmp;
                     true
                 }
                 DownloadEvent::Finished { url, path, success } => {
-                    tracing::info!("Download finished: url={}, success={}, path={:?}", url, success, path);
+                    tracing::info!("[download] FINISHED: success={}, path={:?}", success, path);
+                    tracing::info!("[download]   url={}", url);
+                    emit_log(&dl_log_handle, "info", "download",
+                        &format!("Download finished: success={}, path={:?}", success, path), None);
                     if success {
                         if let Some(ref path) = path {
+                            let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                            tracing::info!("[download] File on disk: {} bytes at {:?}", file_size, path);
                             match std::fs::read_to_string(path) {
                                 Ok(content) => {
+                                    let first_line = content.lines().next().unwrap_or("(empty)");
+                                    tracing::info!("[download] Content: {} bytes, first line: {:?}", content.len(), &first_line[..first_line.len().min(120)]);
                                     if content.contains('|') && !content.trim_start().starts_with('<') {
-                                        emit_log(&dl_log_handle, "success", "download",
-                                            &format!("Download complete: {} bytes, pipe-delimited CSV", content.len()), None);
-                                        // Use the month detected from the page, or null for fallback
                                         let month = dl_month.lock().unwrap().take();
+                                        tracing::info!("[download] Valid CSV detected, month={:?}", month);
+                                        emit_log(&dl_log_handle, "success", "download",
+                                            &format!("Download complete: {} bytes, pipe-delimited CSV, month={:?}", content.len(), month), None);
                                         let month_val = match month {
                                             Some(m) => serde_json::Value::String(m),
                                             None => serde_json::Value::Null,
@@ -175,24 +218,37 @@ pub async fn open_carrier_login(
                                             "month": month_val,
                                             "csv": content
                                         }]).to_string();
-                                        let _ = dl_handle.emit("carrier-commission-data", payload);
-                                        tracing::info!("Commission CSV download captured: {} bytes", content.len());
+                                        tracing::info!("[download] Emitting carrier-commission-data ({} bytes payload)", payload.len());
+                                        match dl_handle.emit("carrier-commission-data", &payload) {
+                                            Ok(_) => tracing::info!("[download] carrier-commission-data emitted OK"),
+                                            Err(e) => tracing::error!("[download] Failed to emit: {}", e),
+                                        }
                                     } else {
+                                        tracing::warn!("[download] NOT CSV: contains_pipe={}, starts_with_html={}", content.contains('|'), content.trim_start().starts_with('<'));
+                                        tracing::warn!("[download] First 200 chars: {:?}", &content[..content.len().min(200)]);
                                         emit_log(&dl_log_handle, "warn", "download", "Downloaded file is not CSV data, skipping", None);
-                                        tracing::warn!("Downloaded file is not CSV data (first 100 chars: {:?})", &content[..content.len().min(100)]);
                                     }
                                 }
                                 Err(e) => {
+                                    tracing::error!("[download] Failed to read file: {}", e);
                                     emit_log(&dl_log_handle, "error", "download", &format!("Failed to read downloaded file: {}", e), None);
-                                    tracing::error!("Failed to read downloaded file: {}", e);
                                 }
                             }
                             let _ = std::fs::remove_file(path);
+                        } else {
+                            tracing::warn!("[download] Success but no path returned");
                         }
+                    } else {
+                        tracing::error!("[download] FAILED: url={}", url);
+                        emit_log(&dl_log_handle, "error", "download",
+                            &format!("Download failed: url={}", url), None);
                     }
                     true
                 }
-                _ => true,
+                _ => {
+                    tracing::debug!("[download] Unknown event variant");
+                    true
+                }
             }
         })
         .build()

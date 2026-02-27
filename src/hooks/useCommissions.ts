@@ -178,7 +178,8 @@ export function useCommissionSummary(month?: string) {
 
 export function useTriggerCommissionFetch() {
   return useMutation({
-    mutationFn: () => tauriInvoke("trigger_commission_fetch"),
+    mutationFn: (args: { fromDate: string; thruDate: string }) =>
+      tauriInvoke("trigger_commission_fetch", args),
   });
 }
 
