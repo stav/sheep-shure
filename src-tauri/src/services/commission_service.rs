@@ -259,6 +259,7 @@ pub fn find_missing_clients(
             rate_difference: None,
             status: Some("MISSING".to_string()),
             import_batch_id: None,
+            raw_data: None,
             notes: None,
             created_at: None,
             updated_at: None,
@@ -472,6 +473,12 @@ pub fn import_commission_statement(
         // Use importer-provided is_initial when available
         let is_initial = row.is_initial.map(|b| if b { 1 } else { 0 });
 
+        // Serialize raw fields to JSON
+        let raw_data = row
+            .raw_fields
+            .as_ref()
+            .and_then(|fields| serde_json::to_string(fields).ok());
+
         let entry = CommissionEntry {
             id: Uuid::new_v4().to_string(),
             client_id,
@@ -488,6 +495,7 @@ pub fn import_commission_statement(
             rate_difference: None,
             status: Some(status.to_string()),
             import_batch_id: Some(batch_id.clone()),
+            raw_data,
             notes: row.notes.clone(),
             created_at: None,
             updated_at: None,

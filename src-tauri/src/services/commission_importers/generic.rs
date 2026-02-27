@@ -110,6 +110,17 @@ pub fn parse(file_path: &str) -> Result<Vec<ParsedCommissionRow>, AppError> {
         let paid_amount = parse_amount("paid_amount").or(statement_amount);
         let plan_type_code = get_field("plan_type");
 
+        // Capture all columns as raw key-value pairs
+        let mut raw_fields = HashMap::new();
+        for (i, header) in headers.iter().enumerate() {
+            if let Some(val) = row.get(i) {
+                let val = val.trim();
+                if !val.is_empty() {
+                    raw_fields.insert(header.clone(), val.to_string());
+                }
+            }
+        }
+
         result.push(ParsedCommissionRow {
             member_name,
             member_id,
@@ -120,6 +131,7 @@ pub fn parse(file_path: &str) -> Result<Vec<ParsedCommissionRow>, AppError> {
             is_initial: None,
             effective_date: None,
             notes: None,
+            raw_fields: Some(raw_fields),
         });
     }
 

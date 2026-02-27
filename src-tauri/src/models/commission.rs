@@ -70,6 +70,7 @@ pub struct CommissionEntry {
     pub rate_difference: Option<f64>,
     pub status: Option<String>,
     pub import_batch_id: Option<String>,
+    pub raw_data: Option<String>,
     pub notes: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
@@ -91,6 +92,7 @@ pub struct CommissionEntryListItem {
     pub rate_difference: Option<f64>,
     pub status: Option<String>,
     pub effective_date: Option<String>,
+    pub raw_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,6 +211,7 @@ pub struct ReconciliationRow {
     pub rate_difference: Option<f64>,
     pub status: Option<String>,
     pub member_name: Option<String>,
+    pub raw_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

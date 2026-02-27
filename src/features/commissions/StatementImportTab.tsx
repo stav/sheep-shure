@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Upload, Trash2, Download, Loader2, ScrollText } from "lucide-react";
+import { Upload, Trash2, Download, Loader2, ScrollText, ChevronDown, ChevronRight } from "lucide-react";
 import type { OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   useCarriers,
+  useCommissionEntries,
   useImportCommissionStatement,
   useDeleteCommissionBatch,
   useTriggerCommissionFetch,
@@ -22,13 +23,75 @@ import {
 } from "@/hooks";
 import { useOpenCarrierLogin } from "@/hooks/useCarrierSync";
 import { ActivityLog } from "./ActivityLog";
+import { RawDataDialog } from "./components/RawDataDialog";
 import type {
   StatementImportResult,
   CommissionCsvPayload,
+  CommissionEntryListItem,
   ImportLogEntry,
 } from "@/types";
 
 type FetchPhase = "idle" | "login" | "fetching" | "importing";
+
+function BatchEntryList({ batchId }: { batchId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [rawDialogOpen, setRawDialogOpen] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<CommissionEntryListItem | undefined>();
+  const { data: entries } = useCommissionEntries({
+    import_batch_id: batchId,
+  });
+
+  if (!entries?.length) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {entries.length} imported entries
+      </button>
+      {expanded && (
+        <div className="mt-1 max-h-64 overflow-auto rounded border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="px-2 py-1 text-left font-medium">Name</th>
+                <th className="px-2 py-1 text-right font-medium">Amount</th>
+                <th className="px-2 py-1 text-left font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr
+                  key={e.id}
+                  className="border-b last:border-b-0 hover:bg-muted/25 cursor-pointer"
+                  onClick={() => {
+                    setSelectedEntry(e);
+                    setRawDialogOpen(true);
+                  }}
+                >
+                  <td className="px-2 py-1">{e.client_name ?? e.member_name ?? "—"}</td>
+                  <td className="px-2 py-1 text-right font-mono">
+                    {e.statement_amount != null ? `$${e.statement_amount.toFixed(2)}` : "—"}
+                  </td>
+                  <td className="px-2 py-1">{e.status ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <RawDataDialog
+        open={rawDialogOpen}
+        onOpenChange={setRawDialogOpen}
+        entry={selectedEntry}
+      />
+    </div>
+  );
+}
 
 export function StatementImportTab() {
   const { data: carriers } = useCarriers();
@@ -311,7 +374,7 @@ export function StatementImportTab() {
                       </ul>
                     </div>
                   )}
-                  <div className="col-span-4">
+                  <div className="col-span-5 flex items-center gap-3">
                     <Button
                       variant="destructive"
                       size="sm"
@@ -321,6 +384,9 @@ export function StatementImportTab() {
                       <Trash2 className="mr-2 h-3 w-3" />
                       Undo
                     </Button>
+                  </div>
+                  <div className="col-span-5">
+                    <BatchEntryList batchId={r.batch_id} />
                   </div>
                 </div>
               ))}
@@ -442,6 +508,8 @@ export function StatementImportTab() {
               <Trash2 className="mr-2 h-4 w-4" />
               Undo Import
             </Button>
+
+            <BatchEntryList batchId={result.batch_id} />
           </CardContent>
         </Card>
       )}

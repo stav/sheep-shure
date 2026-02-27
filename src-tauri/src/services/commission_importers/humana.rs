@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::error::AppError;
 
 use super::ParsedCommissionRow;
@@ -108,6 +110,17 @@ pub fn parse(file_path: &str) -> Result<Vec<ParsedCommissionRow>, AppError> {
         let effective_date = get(eff_date_idx).and_then(|d| parse_humana_date(&d));
         let notes = get(comment_idx);
 
+        // Capture all columns as raw key-value pairs
+        let mut raw_fields = HashMap::new();
+        for (i, header) in headers.iter().enumerate() {
+            if let Some(val) = record.get(i) {
+                let val = val.trim();
+                if !val.is_empty() {
+                    raw_fields.insert(header.clone(), val.to_string());
+                }
+            }
+        }
+
         rows.push(ParsedCommissionRow {
             member_name,
             member_id,
@@ -118,6 +131,7 @@ pub fn parse(file_path: &str) -> Result<Vec<ParsedCommissionRow>, AppError> {
             is_initial,
             effective_date,
             notes,
+            raw_fields: Some(raw_fields),
         });
     }
 

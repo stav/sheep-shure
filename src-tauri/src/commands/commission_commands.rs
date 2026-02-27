@@ -209,6 +209,43 @@ pub fn import_commission_csv(
         &format!("Received CSV for carrier={}, month={}, {} bytes", carrier_id, commission_month, csv_content.len()),
         Some(&preview));
 
+    // Try to detect the actual statement month from a CommRunDt column in the CSV data.
+    // The Humana CSV has a pipe-delimited CommRunDt column (e.g. "10/1/2025") which is more
+    // reliable than the JS-scraped date from the portal page.
+    let commission_month = {
+        let mut detected = commission_month.clone();
+        let delimiter = if csv_content.contains('|') { b'|' } else { b',' };
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(delimiter)
+            .flexible(true)
+            .from_reader(csv_content.as_bytes());
+        if let Ok(headers) = rdr.headers() {
+            let comm_run_idx = headers.iter().position(|h| h.trim() == "CommRunDt");
+            if let Some(idx) = comm_run_idx {
+                if let Some(Ok(record)) = rdr.records().next() {
+                    if let Some(date_str) = record.get(idx) {
+                        let date_str = date_str.trim();
+                        // Parse "M/D/YYYY" → "YYYY-MM"
+                        let parts: Vec<&str> = date_str.split('/').collect();
+                        if parts.len() == 3 {
+                            if let (Ok(month_num), Ok(year)) = (parts[0].parse::<u32>(), parts[2].parse::<u32>()) {
+                                let csv_month = format!("{:04}-{:02}", year, month_num);
+                                if csv_month != detected {
+                                    emit_log(&app, "info", "import",
+                                        &format!("Month override: {} → {} (from CommRunDt: {})", detected, csv_month, date_str),
+                                        None);
+                                }
+                                detected = csv_month;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        detected
+    };
+
     // Write CSV content to a temp file
     let mut tmp = tempfile::Builder::new()
         .suffix(".txt")

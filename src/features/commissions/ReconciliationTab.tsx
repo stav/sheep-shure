@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Search, Pencil, Trash2 } from "lucide-react";
+import { RefreshCw, Search, Pencil, Trash2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 } from "@/hooks";
 import { StatusBadge } from "./components/StatusBadge";
 import { EntryEditDialog } from "./components/EntryEditDialog";
+import { RawDataDialog } from "./components/RawDataDialog";
 import type { CommissionFilters, ReconciliationRow, UpdateCommissionEntryInput } from "@/types";
 
 export function ReconciliationTab({
@@ -50,6 +51,8 @@ export function ReconciliationTab({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<ReconciliationRow | undefined>();
   const [editError, setEditError] = useState<string | null>(null);
+  const [rawDialogOpen, setRawDialogOpen] = useState(false);
+  const [rawDialogEntry, setRawDialogEntry] = useState<ReconciliationRow | undefined>();
 
   const handleEditEntry = (entry: ReconciliationRow) => {
     setEditingEntry(entry);
@@ -234,6 +237,18 @@ export function ReconciliationTab({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
+                            disabled={!row.raw_data}
+                            onClick={() => {
+                              setRawDialogEntry(row);
+                              setRawDialogOpen(true);
+                            }}
+                          >
+                            <FileText className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
                             onClick={() => handleEditEntry(row)}
                           >
                             <Pencil className="h-4 w-4" />
@@ -274,6 +289,12 @@ export function ReconciliationTab({
         onSubmit={handleUpdateEntry}
         isPending={updateEntry.isPending}
         error={editError}
+      />
+
+      <RawDataDialog
+        open={rawDialogOpen}
+        onOpenChange={setRawDialogOpen}
+        entry={rawDialogEntry}
       />
     </div>
   );

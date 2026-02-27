@@ -169,7 +169,7 @@ pub fn get_commission_entries(
                 cr.name, ce.plan_type_code, ce.commission_month,
                 ce.statement_amount, ce.paid_amount, ce.member_name,
                 ce.is_initial, ce.expected_rate, ce.rate_difference, ce.status,
-                e.effective_date
+                e.effective_date, ce.raw_data
          FROM commission_entries ce
          LEFT JOIN clients c ON ce.client_id = c.id
          LEFT JOIN carriers cr ON ce.carrier_id = cr.id
@@ -226,6 +226,7 @@ pub fn get_commission_entries(
                 rate_difference: row.get(11)?,
                 status: row.get(12)?,
                 effective_date: row.get(13)?,
+                raw_data: row.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -237,8 +238,8 @@ pub fn upsert_commission_entry(conn: &Connection, entry: &CommissionEntry) -> Re
     conn.execute(
         "INSERT INTO commission_entries (id, client_id, enrollment_id, carrier_id, plan_type_code,
             commission_month, statement_amount, paid_amount, member_name, member_id,
-            is_initial, expected_rate, rate_difference, status, import_batch_id, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            is_initial, expected_rate, rate_difference, status, import_batch_id, notes, raw_data)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(carrier_id, client_id, commission_month) WHERE client_id IS NOT NULL
          DO UPDATE SET
             enrollment_id = excluded.enrollment_id,
@@ -252,7 +253,8 @@ pub fn upsert_commission_entry(conn: &Connection, entry: &CommissionEntry) -> Re
             rate_difference = excluded.rate_difference,
             status = excluded.status,
             import_batch_id = excluded.import_batch_id,
-            notes = excluded.notes",
+            notes = excluded.notes,
+            raw_data = excluded.raw_data",
         params![
             entry.id,
             entry.client_id,
@@ -270,6 +272,7 @@ pub fn upsert_commission_entry(conn: &Connection, entry: &CommissionEntry) -> Re
             entry.status,
             entry.import_batch_id,
             entry.notes,
+            entry.raw_data,
         ],
     )?;
     Ok(())
@@ -488,7 +491,7 @@ pub fn get_reconciliation_entries(
                 cr.name, ce.plan_type_code, ce.commission_month,
                 e.effective_date, ce.is_initial, ce.expected_rate,
                 ce.statement_amount, ce.paid_amount, ce.rate_difference, ce.status,
-                ce.member_name
+                ce.member_name, ce.raw_data
          FROM commission_entries ce
          LEFT JOIN clients c ON ce.client_id = c.id
          LEFT JOIN carriers cr ON ce.carrier_id = cr.id
@@ -535,6 +538,7 @@ pub fn get_reconciliation_entries(
                 rate_difference: row.get(11)?,
                 status: row.get(12)?,
                 member_name: row.get(13)?,
+                raw_data: row.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

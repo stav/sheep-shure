@@ -1,6 +1,8 @@
 mod generic;
 mod humana;
 
+use std::collections::HashMap;
+
 use crate::error::AppError;
 
 /// Common intermediate type that all carrier-specific parsers produce.
@@ -21,6 +23,8 @@ pub struct ParsedCommissionRow {
     pub is_initial: Option<bool>,
     pub effective_date: Option<String>,
     pub notes: Option<String>,
+    /// All original columns from the carrier file, preserved as key-value pairs.
+    pub raw_fields: Option<HashMap<String, String>>,
 }
 
 /// Dispatch to the correct carrier-specific parser based on `carrier_short_name`.

@@ -434,6 +434,7 @@ export interface CommissionEntryListItem {
   rate_difference?: number;
   status?: CommissionStatus;
   effective_date?: string;
+  raw_data?: string;
 }
 
 export interface CommissionFilters {
@@ -511,6 +512,7 @@ export interface ReconciliationRow {
   rate_difference?: number;
   status?: CommissionStatus;
   member_name?: string;
+  raw_data?: string;
 }
 
 export interface ImportLogEntry {
