@@ -174,6 +174,30 @@ export function useCommissionSummary(month?: string) {
   });
 }
 
+// ── Humana Commission Fetch ──────────────────────────────────────────────────
+
+export function useTriggerCommissionFetch() {
+  return useMutation({
+    mutationFn: () => tauriInvoke("trigger_commission_fetch"),
+  });
+}
+
+export function useImportCommissionCsv() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      carrierId: string;
+      commissionMonth: string;
+      csvContent: string;
+    }) => tauriInvoke<StatementImportResult>("import_commission_csv", args),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["commission-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["reconciliation"] });
+      queryClient.invalidateQueries({ queryKey: ["commission-summary"] });
+    },
+  });
+}
+
 // ── Commission Deposits ──────────────────────────────────────────────────────
 
 export function useCommissionDeposits(carrierId?: string, month?: string) {

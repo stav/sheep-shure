@@ -1,14 +1,26 @@
 use std::collections::HashMap;
-use tauri::State;
+use std::io::{Seek, Write};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::DbState;
 use crate::models::{
     CarrierMonthSummary, CommissionDeposit, CommissionDepositListItem, CommissionEntryListItem,
     CommissionFilters, CommissionRateListItem, CreateCommissionDepositInput,
-    CreateCommissionRateInput, ReconciliationRow, StatementImportResult,
+    CreateCommissionRateInput, ImportLogEntry, ReconciliationRow, StatementImportResult,
     UpdateCommissionDepositInput, UpdateCommissionEntryInput, UpdateCommissionRateInput,
 };
 use crate::services::{commission_service, import_service};
+
+fn emit_log(app: &AppHandle, level: &str, phase: &str, message: &str, detail: Option<&str>) {
+    let entry = ImportLogEntry {
+        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        level: level.to_string(),
+        phase: phase.to_string(),
+        message: message.to_string(),
+        detail: detail.map(String::from),
+    };
+    let _ = app.emit("commission-import-log", &entry);
+}
 
 // ============================================================================
 // Commission Rates
@@ -174,6 +186,54 @@ pub fn import_commission_statement(
                 &carrier_id,
                 &commission_month,
                 &column_mapping,
+                None,
+            )
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Import commission CSV content received from a webview fetch.
+/// Writes the CSV string to a temp file, then delegates to the existing
+/// file-based import_commission_statement pipeline.
+#[tauri::command]
+pub fn import_commission_csv(
+    app: AppHandle,
+    carrier_id: String,
+    commission_month: String,
+    csv_content: String,
+    state: State<'_, DbState>,
+) -> Result<StatementImportResult, String> {
+    // Log first 2 lines as preview
+    let preview: String = csv_content.lines().take(2).collect::<Vec<_>>().join("\n");
+    emit_log(&app, "info", "import",
+        &format!("Received CSV for carrier={}, month={}, {} bytes", carrier_id, commission_month, csv_content.len()),
+        Some(&preview));
+
+    // Write CSV content to a temp file
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".txt")
+        .tempfile()
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    tmp.write_all(csv_content.as_bytes())
+        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    tmp.flush().map_err(|e| format!("Failed to flush temp file: {}", e))?;
+    tmp.seek(std::io::SeekFrom::Start(0))
+        .map_err(|e| format!("Failed to seek temp file: {}", e))?;
+    let tmp_path = tmp.path().to_string_lossy().to_string();
+
+    let log = |entry: ImportLogEntry| {
+        let _ = app.emit("commission-import-log", &entry);
+    };
+
+    state
+        .with_conn(|conn| {
+            commission_service::import_commission_statement(
+                conn,
+                &tmp_path,
+                &carrier_id,
+                &commission_month,
+                &HashMap::new(),
+                Some(&log),
             )
         })
         .map_err(|e| e.to_string())
@@ -226,4 +286,91 @@ pub fn delete_commission_deposit(id: String, state: State<'_, DbState>) -> Resul
     state
         .with_conn(|conn| commission_service::delete_commission_deposit(conn, &id))
         .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Humana Commission Fetch (via webview)
+// ============================================================================
+
+/// JS script eval'd into the carrier-login webview when the user clicks
+/// "Fetch Statements".  The user must already be on the Humana Compensation
+/// Statements page (producer.humana.com).  The CSV links are ASP.NET
+/// `__doPostBack(...)` links — we click them to trigger a real form
+/// submission, and Tauri's `on_download` handler captures the file.
+///
+/// Because `__doPostBack` is a synchronous form submission (only one at a
+/// time), we click only the FIRST CSV link found in the "Current Statement"
+/// section.  The user can fetch prior statements by expanding that section
+/// on the portal and clicking Fetch again.
+const COMMISSION_FETCH_SCRIPT: &str = r#"
+(function() {
+    try {
+        if (window.location.pathname.indexOf('CompensationStatements') === -1) {
+            throw new Error(
+                'Not on the Compensation Statements page. ' +
+                'Navigate to Compensation Statements in the portal, then click Fetch Statements again.'
+            );
+        }
+
+        // Find <a> links whose visible text is exactly "CSV"
+        var links = document.querySelectorAll('a[href]');
+        var csvLinks = [];
+        for (var i = 0; i < links.length; i++) {
+            if ((links[i].textContent || '').trim() === 'CSV') {
+                csvLinks.push(links[i]);
+            }
+        }
+
+        console.log('[Compass] Found ' + csvLinks.length + ' CSV link(s)');
+
+        if (csvLinks.length === 0) {
+            throw new Error('No CSV download links found on the Compensation Statements page.');
+        }
+
+        // Extract the statement date from the row context for month detection.
+        // The table row typically contains: SAN | date (MM/DD/YYYY) | PDF Excel CSV
+        var row = csvLinks[0].closest('tr');
+        var rowText = row ? row.textContent : '';
+        var dateMatch = rowText.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        var month = null;
+        if (dateMatch) {
+            month = dateMatch[3] + '-' + dateMatch[1].padStart(2, '0');
+            console.log('[Compass] Detected statement month: ' + month + ' from date ' + dateMatch[0]);
+        } else {
+            console.log('[Compass] Could not detect month from row: ' + rowText.substring(0, 200));
+        }
+
+        // Store the detected month so the frontend can use it
+        // (sent via a callback before the download triggers)
+        window.location.href = 'http://compass-sync.localhost/commission-month?month=' +
+            encodeURIComponent(month || '');
+
+        // Click the first CSV link after a short delay to let the callback process
+        var link = csvLinks[0];
+        setTimeout(function() {
+            console.log('[Compass] Clicking CSV link');
+            link.click();
+        }, 100);
+
+    } catch (e) {
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
+            encodeURIComponent('Commission fetch: ' + e.toString());
+    }
+})();
+"#;
+
+/// Inject the commission fetch script into the carrier login webview.
+/// The user must already be on the Compensation Statements page at
+/// producer.humana.com — the script scrapes the live DOM for CSV links.
+#[tauri::command]
+pub async fn trigger_commission_fetch(app: AppHandle) -> Result<(), String> {
+    let webview = app
+        .get_webview_window("carrier-login")
+        .ok_or("Carrier login window is not open. Open the Humana portal and log in first.")?;
+
+    webview
+        .eval(COMMISSION_FETCH_SCRIPT)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }

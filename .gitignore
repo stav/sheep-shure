@@ -5,6 +5,7 @@ node_modules/
 dist/
 target/
 .vite/
+*.tsbuildinfo
 
 # Tauri
 src-tauri/target/

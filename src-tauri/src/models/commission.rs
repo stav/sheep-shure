@@ -177,6 +177,19 @@ pub struct UpdateCommissionDepositInput {
 }
 
 // ============================================================================
+// Import Activity Log
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportLogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub phase: String,
+    pub message: String,
+    pub detail: Option<String>,
+}
+
+// ============================================================================
 // Reconciliation / Summary
 // ============================================================================
 

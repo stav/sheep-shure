@@ -513,6 +513,19 @@ export interface ReconciliationRow {
   member_name?: string;
 }
 
+export interface ImportLogEntry {
+  timestamp: string;
+  level: "info" | "success" | "warn" | "error";
+  phase: "portal" | "download" | "parse" | "match" | "import";
+  message: string;
+  detail?: string;
+}
+
+export interface CommissionCsvPayload {
+  month: string | null;
+  csv: string;
+}
+
 export interface CarrierMonthSummary {
   carrier_id: string;
   carrier_name: string;

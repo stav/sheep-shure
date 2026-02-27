@@ -7,12 +7,22 @@ use crate::error::AppError;
 use crate::models::{
     CarrierMonthSummary, CommissionDeposit, CommissionDepositListItem, CommissionEntry,
     CommissionEntryListItem, CommissionFilters, CommissionRateListItem,
-    CreateCommissionDepositInput, CreateCommissionRateInput, ReconciliationRow,
+    CreateCommissionDepositInput, CreateCommissionRateInput, ImportLogEntry, ReconciliationRow,
     StatementImportResult, UpdateCommissionDepositInput, UpdateCommissionEntryInput,
     UpdateCommissionRateInput,
 };
 use crate::repositories::commission_repo;
 use crate::services::commission_importers;
+
+fn make_log(level: &str, phase: &str, message: &str, detail: Option<&str>) -> ImportLogEntry {
+    ImportLogEntry {
+        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        level: level.to_string(),
+        phase: phase.to_string(),
+        message: message.to_string(),
+        detail: detail.map(String::from),
+    }
+}
 
 // ============================================================================
 // Commission Rates
@@ -335,13 +345,21 @@ pub fn parse_commission_statement(file_path: &str) -> Result<crate::services::im
 
 /// Import a commission statement file.
 /// Dispatches to the correct carrier-specific parser based on `carrier.short_name`.
+/// When `log` is provided, structured log entries are emitted for live activity display.
 pub fn import_commission_statement(
     conn: &Connection,
     file_path: &str,
     carrier_id: &str,
     commission_month: &str,
     _column_mapping: &HashMap<String, String>,
+    log: Option<&dyn Fn(ImportLogEntry)>,
 ) -> Result<StatementImportResult, AppError> {
+    let emit = |level: &str, phase: &str, msg: &str, detail: Option<&str>| {
+        if let Some(log_fn) = log {
+            log_fn(make_log(level, phase, msg, detail));
+        }
+    };
+
     // Look up carrier short_name for dispatch
     let short_name: String = conn
         .query_row(
@@ -351,7 +369,46 @@ pub fn import_commission_statement(
         )
         .map_err(|_| AppError::NotFound(format!("Carrier not found: {}", carrier_id)))?;
 
+    emit("info", "parse", &format!("Carrier: {}, using {} importer", short_name, short_name.to_lowercase()), None);
+
+    // Log the first line of the file for diagnostic purposes
+    if let Ok(content) = std::fs::read_to_string(file_path) {
+        let preview: String = content.lines().take(2).collect::<Vec<_>>().join(" | ");
+        tracing::info!(
+            "Importing commission statement for carrier '{}' (short_name: '{}'): {}",
+            carrier_id, short_name, preview
+        );
+    }
+
     let parsed_rows = commission_importers::parse_statement_rows(file_path, &short_name)?;
+
+    // Log parse results with header info
+    if let Ok(content) = std::fs::read_to_string(file_path) {
+        if let Some(header_line) = content.lines().next() {
+            let headers = if header_line.contains('|') {
+                header_line.split('|').take(8).collect::<Vec<_>>().join("|")
+            } else {
+                header_line.chars().take(120).collect::<String>()
+            };
+            emit("info", "parse",
+                &format!("Parsed {} rows", parsed_rows.len()),
+                Some(&format!("Headers: {}", headers)));
+        }
+    }
+
+    // Log sample rows (first 5)
+    for (i, row) in parsed_rows.iter().take(5).enumerate() {
+        let name = row.member_name.as_deref().unwrap_or("?");
+        let amt = row.statement_amount.map(|a| format!("${:.2}", a)).unwrap_or_else(|| "?".to_string());
+        let plan = row.plan_type_code.as_deref().unwrap_or("?");
+        let ir = match row.is_initial {
+            Some(true) => "Initial",
+            Some(false) => "Renewal",
+            None => "?",
+        };
+        emit("info", "parse", &format!("Sample {}: {} → {} {} {}", i + 1, name, amt, plan, ir), None);
+    }
+
     let batch_id = Uuid::new_v4().to_string();
 
     let mut matched = 0;
@@ -365,7 +422,9 @@ pub fn import_commission_statement(
         if row.member_name.is_none() && row.member_id.is_none() {
             if row.statement_amount.is_some() {
                 errors += 1;
-                error_messages.push(format!("Row {}: No member name or ID", row_idx + 2));
+                let msg = format!("Row {}: No member name or ID", row_idx + 2);
+                emit("error", "match", &msg, None);
+                error_messages.push(msg);
             } else {
                 skipped += 1;
             }
@@ -384,8 +443,19 @@ pub fn import_commission_statement(
         // Prefer importer-provided plan_type, fall back to enrollment plan_type
         let plan_type_code = row.plan_type_code.clone().or(enrollment_plan_type);
 
+        let name = row.member_name.as_deref().unwrap_or("?");
+        let amt = row.statement_amount.map(|a| format!("${:.2}", a)).unwrap_or_else(|| "?".to_string());
+        let plan = plan_type_code.as_deref().unwrap_or("?");
+        let ir = match row.is_initial {
+            Some(true) => "Initial",
+            Some(false) => "Renewal",
+            None => "",
+        };
+
         let status = if client_id.is_some() {
             matched += 1;
+            emit("success", "match",
+                &format!("Row {}: {} → {} {} {} → matched", row_idx + 1, name, amt, plan, ir), None);
             "PENDING"
         } else {
             unmatched += 1;
@@ -394,6 +464,8 @@ pub fn import_commission_statement(
                     unmatched_names.push(name.clone());
                 }
             }
+            emit("warn", "match",
+                &format!("Row {}: {} → {} {} {} → UNMATCHED", row_idx + 1, name, amt, plan, ir), None);
             "UNMATCHED"
         };
 
@@ -423,11 +495,17 @@ pub fn import_commission_statement(
 
         if let Err(e) = commission_repo::upsert_commission_entry(conn, &entry) {
             errors += 1;
-            error_messages.push(format!("Row {}: {}", row_idx + 2, e));
+            let msg = format!("Row {}: {}", row_idx + 2, e);
+            emit("error", "import", &msg, None);
+            error_messages.push(msg);
         }
     }
 
     let total = matched + unmatched + skipped + errors;
+
+    emit("success", "import",
+        &format!("Import complete: {} matched, {} unmatched, {} skipped, {} errors", matched, unmatched, skipped, errors),
+        None);
 
     Ok(StatementImportResult {
         total,

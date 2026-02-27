@@ -2,7 +2,18 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindowBuilder, WebviewUrl
 
 use crate::carrier_sync;
 use crate::db::DbState;
-use crate::models::{CarrierSyncInfo, ConfirmDisenrollmentResult, ImportPortalResult, PortalCredentials, PortalMember, SyncLogEntry, SyncResult};
+use crate::models::{CarrierSyncInfo, ConfirmDisenrollmentResult, ImportLogEntry, ImportPortalResult, PortalCredentials, PortalMember, SyncLogEntry, SyncResult};
+
+fn emit_log(app: &AppHandle, level: &str, phase: &str, message: &str, detail: Option<&str>) {
+    let entry = ImportLogEntry {
+        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        level: level.to_string(),
+        phase: phase.to_string(),
+        message: message.to_string(),
+        detail: detail.map(String::from),
+    };
+    let _ = app.emit("commission-import-log", &entry);
+}
 
 /// Open a webview window to the carrier's login portal.
 /// Sets up a navigation interceptor to catch sync results from injected JS.
@@ -61,6 +72,12 @@ pub async fn open_carrier_login(
     // Build combined initialization script
     let mut combined_script = String::new();
 
+    // Override window.open — Tauri webviews have no popup/tab support,
+    // so redirect window.open() calls to navigate in the current window.
+    combined_script.push_str(
+        "(function(){window.open=function(url){if(url)window.location.href=url;return window;}})();\n",
+    );
+
     if let Some(ref creds) = saved_creds {
         // Inject credentials as a JS object (JSON-escaped for safety)
         let creds_json = serde_json::json!({
@@ -83,7 +100,15 @@ pub async fn open_carrier_login(
         }
     }
 
-    let app_handle = app.clone();
+    let nav_handle = app.clone();
+    let dl_handle = app.clone();
+    let dl_log_handle = app.clone();
+    // Shared state: the JS sends the detected statement month via a callback
+    // before triggering the CSV download.  The download handler reads it.
+    let pending_month = std::sync::Arc::new(std::sync::Mutex::new(Option::<String>::None));
+    let nav_month = pending_month.clone();
+    let dl_month = pending_month.clone();
+
     WebviewWindowBuilder::new(&app, "carrier-login", WebviewUrl::External(url.parse().unwrap()))
         .title(format!("{} Login", portal.carrier_name()))
         .inner_size(1200.0, 800.0)
@@ -93,18 +118,82 @@ pub async fn open_carrier_login(
             if host == "compass-sync.localhost" {
                 let path = nav_url.path();
                 if path == "/data" {
-                    // Extract the members JSON from the query string
                     if let Some(members_val) = nav_url.query_pairs().find(|(k, _)| k == "members") {
-                        let _ = app_handle.emit("carrier-sync-data", members_val.1.to_string());
+                        let _ = nav_handle.emit("carrier-sync-data", members_val.1.to_string());
+                    }
+                } else if path == "/commission" {
+                    if let Some(val) = nav_url.query_pairs().find(|(k, _)| k == "statements") {
+                        let _ = nav_handle.emit("carrier-commission-data", val.1.to_string());
+                    }
+                } else if path == "/commission-month" {
+                    // Store the detected month for the next download
+                    if let Some(m) = nav_url.query_pairs().find(|(k, _)| k == "month") {
+                        let month_str = m.1.to_string();
+                        if !month_str.is_empty() {
+                            tracing::info!("Commission month detected from page: {}", month_str);
+                            emit_log(&nav_handle, "info", "portal", &format!("Detected statement month: {}", month_str), None);
+                            *nav_month.lock().unwrap() = Some(month_str);
+                        }
                     }
                 } else if path == "/error" {
                     if let Some(err_val) = nav_url.query_pairs().find(|(k, _)| k == "message") {
-                        let _ = app_handle.emit("carrier-sync-error", err_val.1.to_string());
+                        emit_log(&nav_handle, "error", "portal", &err_val.1, None);
+                        let _ = nav_handle.emit("carrier-sync-error", err_val.1.to_string());
                     }
                 }
-                return false; // block navigation to the fake URL
+                return false;
             }
-            true // allow all other navigation
+            true
+        })
+        .on_download(move |_webview, event| {
+            use tauri::webview::DownloadEvent;
+            match event {
+                DownloadEvent::Requested { url, destination } => {
+                    let fname = format!("compass-dl-{}.csv", std::process::id());
+                    let tmp = std::env::temp_dir().join(fname);
+                    tracing::info!("Download requested: url={}, dest={:?}", url, tmp);
+                    emit_log(&dl_log_handle, "info", "download", "Download started", None);
+                    *destination = tmp;
+                    true
+                }
+                DownloadEvent::Finished { url, path, success } => {
+                    tracing::info!("Download finished: url={}, success={}, path={:?}", url, success, path);
+                    if success {
+                        if let Some(ref path) = path {
+                            match std::fs::read_to_string(path) {
+                                Ok(content) => {
+                                    if content.contains('|') && !content.trim_start().starts_with('<') {
+                                        emit_log(&dl_log_handle, "success", "download",
+                                            &format!("Download complete: {} bytes, pipe-delimited CSV", content.len()), None);
+                                        // Use the month detected from the page, or null for fallback
+                                        let month = dl_month.lock().unwrap().take();
+                                        let month_val = match month {
+                                            Some(m) => serde_json::Value::String(m),
+                                            None => serde_json::Value::Null,
+                                        };
+                                        let payload = serde_json::json!([{
+                                            "month": month_val,
+                                            "csv": content
+                                        }]).to_string();
+                                        let _ = dl_handle.emit("carrier-commission-data", payload);
+                                        tracing::info!("Commission CSV download captured: {} bytes", content.len());
+                                    } else {
+                                        emit_log(&dl_log_handle, "warn", "download", "Downloaded file is not CSV data, skipping", None);
+                                        tracing::warn!("Downloaded file is not CSV data (first 100 chars: {:?})", &content[..content.len().min(100)]);
+                                    }
+                                }
+                                Err(e) => {
+                                    emit_log(&dl_log_handle, "error", "download", &format!("Failed to read downloaded file: {}", e), None);
+                                    tracing::error!("Failed to read downloaded file: {}", e);
+                                }
+                            }
+                            let _ = std::fs::remove_file(path);
+                        }
+                    }
+                    true
+                }
+                _ => true,
+            }
         })
         .build()
         .map_err(|e| e.to_string())?;
