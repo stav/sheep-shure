@@ -94,6 +94,17 @@ pub struct CommissionEntryListItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCommissionEntryInput {
+    pub member_name: Option<String>,
+    pub plan_type_code: Option<String>,
+    pub statement_amount: Option<f64>,
+    pub paid_amount: Option<f64>,
+    pub is_initial: Option<i32>,
+    pub status: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommissionFilters {
     pub carrier_id: Option<String>,
     pub commission_month: Option<String>,

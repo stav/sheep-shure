@@ -48,6 +48,7 @@ interface RateFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rate?: CommissionRateListItem;
+  defaultValues?: CreateCommissionRateInput;
   onSubmit: (input: CreateCommissionRateInput) => void;
   isPending: boolean;
 }
@@ -56,6 +57,7 @@ export function RateFormDialog({
   open,
   onOpenChange,
   rate,
+  defaultValues,
   onSubmit,
   isPending,
 }: RateFormDialogProps) {
@@ -75,6 +77,13 @@ export function RateFormDialog({
       setInitialRate(rate.initial_rate);
       setRenewalRate(rate.renewal_rate);
       setNotes(rate.notes ?? "");
+    } else if (defaultValues) {
+      setCarrierId(defaultValues.carrier_id);
+      setPlanTypeCode(defaultValues.plan_type_code);
+      setPlanYear(defaultValues.plan_year);
+      setInitialRate(defaultValues.initial_rate);
+      setRenewalRate(defaultValues.renewal_rate);
+      setNotes(defaultValues.notes ?? "");
     } else {
       setCarrierId("");
       setPlanTypeCode("");
@@ -83,7 +92,7 @@ export function RateFormDialog({
       setRenewalRate(0);
       setNotes("");
     }
-  }, [rate, open]);
+  }, [rate, defaultValues, open]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +110,7 @@ export function RateFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{rate ? "Edit Rate" : "Add Rate"}</DialogTitle>
+          <DialogTitle>{rate ? "Edit Rate" : defaultValues ? "Duplicate Rate" : "Add Rate"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">

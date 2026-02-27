@@ -8,7 +8,8 @@ use crate::models::{
     CarrierMonthSummary, CommissionDeposit, CommissionDepositListItem, CommissionEntry,
     CommissionEntryListItem, CommissionFilters, CommissionRateListItem,
     CreateCommissionDepositInput, CreateCommissionRateInput, ReconciliationRow,
-    StatementImportResult, UpdateCommissionDepositInput, UpdateCommissionRateInput,
+    StatementImportResult, UpdateCommissionDepositInput, UpdateCommissionEntryInput,
+    UpdateCommissionRateInput,
 };
 use crate::repositories::commission_repo;
 use crate::services::commission_importers;
@@ -65,6 +66,18 @@ pub fn get_commission_entries(
 
 pub fn delete_commission_batch(conn: &Connection, batch_id: &str) -> Result<usize, AppError> {
     commission_repo::delete_entries_by_batch(conn, batch_id)
+}
+
+pub fn update_commission_entry(
+    conn: &Connection,
+    id: &str,
+    input: &UpdateCommissionEntryInput,
+) -> Result<(), AppError> {
+    commission_repo::update_commission_entry(conn, id, input)
+}
+
+pub fn delete_commission_entry(conn: &Connection, id: &str) -> Result<(), AppError> {
+    commission_repo::delete_commission_entry(conn, id)
 }
 
 // ============================================================================

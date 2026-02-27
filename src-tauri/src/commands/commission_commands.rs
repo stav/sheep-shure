@@ -6,7 +6,7 @@ use crate::models::{
     CarrierMonthSummary, CommissionDeposit, CommissionDepositListItem, CommissionEntryListItem,
     CommissionFilters, CommissionRateListItem, CreateCommissionDepositInput,
     CreateCommissionRateInput, ReconciliationRow, StatementImportResult,
-    UpdateCommissionDepositInput, UpdateCommissionRateInput,
+    UpdateCommissionDepositInput, UpdateCommissionEntryInput, UpdateCommissionRateInput,
 };
 use crate::services::{commission_service, import_service};
 
@@ -76,6 +76,24 @@ pub fn delete_commission_batch(
 ) -> Result<usize, String> {
     state
         .with_conn(|conn| commission_service::delete_commission_batch(conn, &batch_id))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_commission_entry(
+    id: String,
+    input: UpdateCommissionEntryInput,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    state
+        .with_conn(|conn| commission_service::update_commission_entry(conn, &id, &input))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_commission_entry(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    state
+        .with_conn(|conn| commission_service::delete_commission_entry(conn, &id))
         .map_err(|e| e.to_string())
 }
 

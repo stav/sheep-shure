@@ -104,6 +104,8 @@ pub fn run() {
             commands::delete_commission_rate,
             commands::get_commission_entries,
             commands::delete_commission_batch,
+            commands::update_commission_entry,
+            commands::delete_commission_entry,
             commands::parse_commission_statement,
             commands::import_commission_statement,
             commands::reconcile_commissions,

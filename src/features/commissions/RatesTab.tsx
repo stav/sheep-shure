@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Copy, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -19,11 +19,13 @@ import {
 import { RateFormDialog } from "./components/RateFormDialog";
 import type { CommissionRateListItem, CreateCommissionRateInput } from "@/types";
 
+
 export function RatesTab() {
   const [filterCarrier, setFilterCarrier] = useState<string | undefined>();
   const [filterYear, setFilterYear] = useState<number | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRate, setEditingRate] = useState<CommissionRateListItem | undefined>();
+  const [duplicateDefaults, setDuplicateDefaults] = useState<CreateCommissionRateInput | undefined>();
 
   const { data: carriers } = useCarriers();
   const { data: rates, isLoading } = useCommissionRates(filterCarrier, filterYear);
@@ -33,11 +35,26 @@ export function RatesTab() {
 
   const handleAdd = () => {
     setEditingRate(undefined);
+    setDuplicateDefaults(undefined);
     setDialogOpen(true);
   };
 
   const handleEdit = (rate: CommissionRateListItem) => {
     setEditingRate(rate);
+    setDuplicateDefaults(undefined);
+    setDialogOpen(true);
+  };
+
+  const handleDuplicate = (rate: CommissionRateListItem) => {
+    setEditingRate(undefined);
+    setDuplicateDefaults({
+      carrier_id: rate.carrier_id,
+      plan_type_code: rate.plan_type_code,
+      plan_year: rate.plan_year,
+      initial_rate: rate.initial_rate,
+      renewal_rate: rate.renewal_rate,
+      notes: rate.notes ?? undefined,
+    });
     setDialogOpen(true);
   };
 
@@ -154,6 +171,14 @@ export function RatesTab() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
+                          onClick={() => handleDuplicate(rate)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
                           onClick={() => handleEdit(rate)}
                         >
                           <Pencil className="h-4 w-4" />
@@ -180,6 +205,7 @@ export function RatesTab() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         rate={editingRate}
+        defaultValues={duplicateDefaults}
         onSubmit={handleSubmit}
         isPending={createRate.isPending || updateRate.isPending}
       />

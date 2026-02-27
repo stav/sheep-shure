@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,10 +14,13 @@ import {
   useReconciliationEntries,
   useReconcileCommissions,
   useFindMissingCommissions,
+  useUpdateCommissionEntry,
+  useDeleteCommissionEntry,
   useCarriers,
 } from "@/hooks";
 import { StatusBadge } from "./components/StatusBadge";
-import type { CommissionFilters } from "@/types";
+import { EntryEditDialog } from "./components/EntryEditDialog";
+import type { CommissionFilters, ReconciliationRow, UpdateCommissionEntryInput } from "@/types";
 
 export function ReconciliationTab({
   initialCarrierId,
@@ -41,6 +44,32 @@ export function ReconciliationTab({
   const { data: entries, isLoading } = useReconciliationEntries(filters);
   const reconcile = useReconcileCommissions();
   const findMissing = useFindMissingCommissions();
+  const updateEntry = useUpdateCommissionEntry();
+  const deleteEntry = useDeleteCommissionEntry();
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ReconciliationRow | undefined>();
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const handleEditEntry = (entry: ReconciliationRow) => {
+    setEditingEntry(entry);
+    setEditError(null);
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateEntry = (id: string, input: UpdateCommissionEntryInput) => {
+    updateEntry.mutate(
+      { id, input },
+      {
+        onSuccess: () => setEditDialogOpen(false),
+        onError: (err) => setEditError(err instanceof Error ? err.message : String(err)),
+      }
+    );
+  };
+
+  const handleDeleteEntry = (id: string) => {
+    deleteEntry.mutate(id);
+  };
 
   const handleReconcile = () => {
     reconcile.mutate({ carrierId: carrierId, month: month });
@@ -139,18 +168,19 @@ export function ReconciliationTab({
                   <th className="px-4 py-3 text-right font-medium">Paid</th>
                   <th className="px-4 py-3 text-right font-medium">Diff</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                       Loading...
                     </td>
                   </tr>
                 ) : !entries?.length ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
                       No entries found. Import a statement and run reconciliation to see results.
                     </td>
                   </tr>
@@ -198,6 +228,26 @@ export function ReconciliationTab({
                       <td className="px-4 py-3">
                         <StatusBadge status={row.status} />
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleEditEntry(row)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteEntry(row.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -216,6 +266,15 @@ export function ReconciliationTab({
           {entries.filter((e) => e.status && e.status !== "OK").length} issues
         </div>
       )}
+
+      <EntryEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        entry={editingEntry}
+        onSubmit={handleUpdateEntry}
+        isPending={updateEntry.isPending}
+        error={editError}
+      />
     </div>
   );
 }

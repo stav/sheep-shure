@@ -5,7 +5,7 @@ use crate::models::{
     CarrierMonthSummary, CommissionDepositListItem, CommissionEntry,
     CommissionEntryListItem, CommissionFilters, CommissionRate, CommissionRateListItem,
     CreateCommissionDepositInput, CreateCommissionRateInput, ReconciliationRow,
-    UpdateCommissionDepositInput, UpdateCommissionRateInput,
+    UpdateCommissionDepositInput, UpdateCommissionEntryInput, UpdateCommissionRateInput,
 };
 
 // ============================================================================
@@ -296,6 +296,55 @@ pub fn update_entry_status(
          WHERE id = ?1",
         params![id, status, expected_rate, rate_difference, is_initial],
     )?;
+    Ok(())
+}
+
+pub fn update_commission_entry(
+    conn: &Connection,
+    id: &str,
+    input: &UpdateCommissionEntryInput,
+) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "UPDATE commission_entries SET
+            member_name = COALESCE(?2, member_name),
+            plan_type_code = COALESCE(?3, plan_type_code),
+            statement_amount = COALESCE(?4, statement_amount),
+            paid_amount = COALESCE(?5, paid_amount),
+            is_initial = COALESCE(?6, is_initial),
+            status = COALESCE(?7, status),
+            notes = COALESCE(?8, notes)
+         WHERE id = ?1",
+        params![
+            id,
+            input.member_name,
+            input.plan_type_code,
+            input.statement_amount,
+            input.paid_amount,
+            input.is_initial,
+            input.status,
+            input.notes
+        ],
+    )?;
+    if rows == 0 {
+        return Err(AppError::NotFound(format!(
+            "Commission entry {} not found",
+            id
+        )));
+    }
+    Ok(())
+}
+
+pub fn delete_commission_entry(conn: &Connection, id: &str) -> Result<(), AppError> {
+    let rows = conn.execute(
+        "DELETE FROM commission_entries WHERE id = ?1",
+        params![id],
+    )?;
+    if rows == 0 {
+        return Err(AppError::NotFound(format!(
+            "Commission entry {} not found",
+            id
+        )));
+    }
     Ok(())
 }
 

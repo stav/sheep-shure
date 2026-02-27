@@ -10,6 +10,7 @@ import type {
   CommissionDepositListItem,
   CreateCommissionDepositInput,
   UpdateCommissionDepositInput,
+  UpdateCommissionEntryInput,
   ReconciliationRow,
   CarrierMonthSummary,
 } from "@/types";
@@ -75,6 +76,32 @@ export function useDeleteCommissionBatch() {
   return useMutation({
     mutationFn: (batchId: string) =>
       tauriInvoke<number>("delete_commission_batch", { batchId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["commission-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["reconciliation"] });
+      queryClient.invalidateQueries({ queryKey: ["commission-summary"] });
+    },
+  });
+}
+
+export function useUpdateCommissionEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateCommissionEntryInput }) =>
+      tauriInvoke("update_commission_entry", { id, input }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["commission-entries"] });
+      queryClient.invalidateQueries({ queryKey: ["reconciliation"] });
+      queryClient.invalidateQueries({ queryKey: ["commission-summary"] });
+    },
+  });
+}
+
+export function useDeleteCommissionEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      tauriInvoke("delete_commission_entry", { id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["commission-entries"] });
       queryClient.invalidateQueries({ queryKey: ["reconciliation"] });

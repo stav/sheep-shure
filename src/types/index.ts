@@ -486,6 +486,16 @@ export interface UpdateCommissionDepositInput {
   notes?: string;
 }
 
+export interface UpdateCommissionEntryInput {
+  member_name?: string;
+  plan_type_code?: string;
+  statement_amount?: number;
+  paid_amount?: number;
+  is_initial?: number;
+  status?: string;
+  notes?: string;
+}
+
 export interface ReconciliationRow {
   id: string;
   client_id?: string;
