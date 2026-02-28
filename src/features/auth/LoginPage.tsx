@@ -39,6 +39,15 @@ export function LoginPage() {
       try {
         const firstRun = await tauriInvoke<boolean>("check_first_run");
         setFirstRun(firstRun);
+
+        // Dev mode: auto-login, backend ignores password anyway
+        if (import.meta.env.DEV) {
+          const cmd = firstRun ? "create_account" : "login";
+          await tauriInvoke(cmd, { password: "dev" });
+          setAuthenticated(true);
+          navigate("/dashboard", { replace: true });
+          return;
+        }
       } catch (err) {
         console.error("Failed to check first run:", err);
       } finally {
@@ -47,7 +56,7 @@ export function LoginPage() {
       }
     }
     checkFirstRun();
-  }, [setFirstRun, setLoading]);
+  }, [setFirstRun, setLoading, setAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
