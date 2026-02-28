@@ -161,17 +161,17 @@ export function ReconciliationTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium">Client</th>
-                  <th className="px-4 py-3 text-left font-medium">Carrier</th>
-                  <th className="px-4 py-3 text-left font-medium">Month</th>
-                  <th className="px-4 py-3 text-left font-medium">Eff. Date</th>
-                  <th className="px-4 py-3 text-left font-medium">Type</th>
-                  <th className="px-4 py-3 text-right font-medium">Expected</th>
-                  <th className="px-4 py-3 text-right font-medium">Statement</th>
-                  <th className="px-4 py-3 text-right font-medium">Paid</th>
-                  <th className="px-4 py-3 text-right font-medium">Diff</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Client</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Carrier</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Month</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Eff. Date</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Type</th>
+                  <th className="px-4 py-0.5 text-right font-medium">Expected</th>
+                  <th className="px-4 py-0.5 text-right font-medium">Statement</th>
+                  <th className="px-4 py-0.5 text-right font-medium">Paid</th>
+                  <th className="px-4 py-0.5 text-right font-medium">Diff</th>
+                  <th className="px-4 py-0.5 text-left font-medium">Status</th>
+                  <th className="px-4 py-0.5 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -190,27 +190,27 @@ export function ReconciliationTab({
                 ) : (
                   entries.map((row) => (
                     <tr key={row.id} className="border-b last:border-b-0 hover:bg-muted/25">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-0.5">
                         {row.client_name ?? (
                           <span className="text-muted-foreground italic">
                             {row.member_name ?? "Unknown"}
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">{row.carrier_name}</td>
-                      <td className="px-4 py-3">{row.commission_month}</td>
-                      <td className="px-4 py-3">{row.effective_date ?? "—"}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-0.5">{row.carrier_name}</td>
+                      <td className="px-4 py-0.5">{row.commission_month}</td>
+                      <td className="px-4 py-0.5">{row.effective_date ?? "—"}</td>
+                      <td className="px-4 py-0.5">
                         {row.is_initial != null
                           ? row.is_initial === 1
                             ? "Initial"
                             : "Renewal"
                           : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono">{fmt(row.expected_rate)}</td>
-                      <td className="px-4 py-3 text-right font-mono">{fmt(row.statement_amount)}</td>
-                      <td className="px-4 py-3 text-right font-mono">{fmt(row.paid_amount)}</td>
-                      <td className="px-4 py-3 text-right font-mono">
+                      <td className="px-4 py-0.5 text-right font-mono">{fmt(row.expected_rate)}</td>
+                      <td className="px-4 py-0.5 text-right font-mono">{fmt(row.statement_amount)}</td>
+                      <td className="px-4 py-0.5 text-right font-mono">{fmt(row.paid_amount)}</td>
+                      <td className="px-4 py-0.5 text-right font-mono">
                         {row.rate_difference != null ? (
                           <span
                             className={
@@ -228,10 +228,10 @@ export function ReconciliationTab({
                           "—"
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-0.5">
                         <StatusBadge status={row.status} />
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-0.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
