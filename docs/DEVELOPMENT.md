@@ -37,7 +37,11 @@ pub struct DbState {
 
 ### Auth Flow
 
-There is no separate authentication system. The password **is** the encryption key:
+There is no separate authentication system. The password **is** the encryption key. The implementation differs between dev and release builds, controlled by `#[cfg(debug_assertions)]` in `auth_service.rs` — this is compile-time conditional compilation, so the compiler physically includes only one code path per build profile.
+
+#### Release builds (encrypted)
+
+Database file: `compass.db` + `compass.salt`
 
 1. User enters password
 2. Read salt from `compass.salt` (or generate on first run)
@@ -46,6 +50,17 @@ There is no separate authentication system. The password **is** the encryption k
 5. Verify with `SELECT count(*) FROM sqlite_master` — if it fails, wrong password
 6. Enable WAL mode and foreign keys
 7. Store the `Connection` in `DbState`
+
+#### Dev builds (unencrypted)
+
+Database file: `compass-dev.db` (no salt file)
+
+- Plain `Connection::open()` — no encryption, no Argon2 derivation
+- The password parameter is accepted but ignored
+- DB is inspectable with any SQLite tool (`sqlite3` CLI, DB Browser for SQLite, etc.)
+- The login UI still shows the password form for UX consistency, but any value is accepted
+
+The separate filenames prevent accidentally opening a dev DB with a release build or vice versa. Both builds export the same four functions (`is_first_run`, `create_database`, `unlock_database`, `change_password`) with identical signatures, so the command layer requires no `cfg` gating.
 
 ## Frontend Architecture
 
