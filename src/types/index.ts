@@ -96,6 +96,7 @@ export interface DashboardStats {
   pending_enrollments: number;
   by_plan_type: [string, number][];
   by_carrier: [string, number, number][];
+  carrier_plans: [string, string, number][];
   by_state: [string, number][];
   monthly_trend: MonthlyTrend[];
 }
