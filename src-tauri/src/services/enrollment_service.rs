@@ -41,6 +41,31 @@ pub fn create_enrollment(conn: &Connection, input: &CreateEnrollmentInput) -> Re
     Ok(enrollment)
 }
 
+pub fn get_enrollment(conn: &Connection, id: &str) -> Result<Enrollment, AppError> {
+    enrollment_repo::get_enrollment(conn, id)
+}
+
+pub fn delete_enrollment(conn: &Connection, id: &str) -> Result<(), AppError> {
+    let enrollment = enrollment_repo::get_enrollment(conn, id)?;
+
+    enrollment_repo::delete_enrollment(conn, id)?;
+
+    let event_data = serde_json::json!({
+        "enrollment_id": enrollment.id,
+        "plan_name": enrollment.plan_name,
+        "status": enrollment.status_code,
+    })
+    .to_string();
+    let _ = conversation_service::create_system_event(
+        conn,
+        &enrollment.client_id,
+        "ENROLLMENT_DELETED",
+        Some(&event_data),
+    );
+
+    Ok(())
+}
+
 pub fn update_enrollment(conn: &Connection, id: &str, input: &UpdateEnrollmentInput) -> Result<Enrollment, AppError> {
     enrollment_repo::update_enrollment(conn, id, input)?;
 

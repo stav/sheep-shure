@@ -4,6 +4,26 @@ use crate::models::{CreateEnrollmentInput, Enrollment, EnrollmentListItem, Updat
 use crate::services::enrollment_service;
 
 #[tauri::command]
+pub fn get_enrollment(
+    id: String,
+    state: State<'_, DbState>,
+) -> Result<Enrollment, String> {
+    state.with_conn(|conn| {
+        enrollment_service::get_enrollment(conn, &id)
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_enrollment(
+    id: String,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    state.with_conn(|conn| {
+        enrollment_service::delete_enrollment(conn, &id)
+    }).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_enrollments(
     client_id: Option<String>,
     state: State<'_, DbState>,

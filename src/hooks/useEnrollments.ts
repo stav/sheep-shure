@@ -24,6 +24,14 @@ export function useCreateEnrollment() {
   });
 }
 
+export function useEnrollment(id?: string) {
+  return useQuery({
+    queryKey: ["enrollment", id],
+    queryFn: () => tauriInvoke<Enrollment>("get_enrollment", { id: id! }),
+    enabled: !!id,
+  });
+}
+
 export function useUpdateEnrollment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -31,6 +39,18 @@ export function useUpdateEnrollment() {
       tauriInvoke<Enrollment>("update_enrollment", { id, input }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["enrollments"] });
+    },
+  });
+}
+
+export function useDeleteEnrollment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      tauriInvoke<void>("delete_enrollment", { id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enrollments"] });
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
     },
   });
 }
