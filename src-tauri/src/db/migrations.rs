@@ -32,6 +32,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 6,
         sql: include_str!("migrations/v006_member_details.sql"),
     },
+    Migration {
+        version: 7,
+        sql: include_str!("migrations/v007_commissions.sql"),
+    },
+    Migration {
+        version: 8,
+        sql: include_str!("migrations/v008_deposits_allow_multiple.sql"),
+    },
+    Migration {
+        version: 9,
+        sql: include_str!("migrations/v009_raw_data.sql"),
+    },
 ];
 
 /// Run all pending migrations against the database.

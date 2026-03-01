@@ -8,6 +8,7 @@ import {
   Upload,
   BarChart3,
   RefreshCw,
+  DollarSign,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { CommandPalette } from "./CommandPalette";
+import { FindInPage } from "./FindInPage";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useZoom } from "@/hooks/useZoom";
 
@@ -42,6 +44,7 @@ const navItems = [
   { to: "/import", label: "Import", icon: Upload },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/carrier-sync", label: "Carrier Sync", icon: RefreshCw },
+  { to: "/commissions", label: "Commissions", icon: DollarSign },
 ];
 
 const pageTitles: Record<string, string> = {
@@ -52,6 +55,7 @@ const pageTitles: Record<string, string> = {
   "/import": "Import",
   "/reports": "Reports",
   "/carrier-sync": "Carrier Sync",
+  "/commissions": "Commissions",
   "/settings": "Settings",
 };
 
@@ -335,6 +339,7 @@ export function AppLayout() {
         </div>
       </div>
       <CommandPalette />
+      <FindInPage />
     </TooltipProvider>
   );
 }

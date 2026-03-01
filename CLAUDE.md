@@ -11,3 +11,10 @@
   await window.__TAURI_INTERNALS__.__invoke("command_name", { argName: "value" })
   ```
 - `window.__TAURI__.core.invoke()` and `window.__TAURI_INTERNALS__.core.invoke()` do **not** work.
+
+## Git Commit Messages
+When asked for "commit messages" look in the working tree changes as well as the index (staged files) and give appropriate commit summary messages in the following formats:
+1. one word,
+2. three words,
+3. one sentence,
+4. full (long) message.
