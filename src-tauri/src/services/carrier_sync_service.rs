@@ -347,11 +347,24 @@ pub fn import_portal_members(
         };
 
         // If the member is canceled/inactive on the portal, deactivate the client
+        // only if they have no other active enrollments with other carriers
         if status_code == "CANCELLED" {
-            let _ = conn.execute(
-                "UPDATE clients SET is_active = 0, updated_at = datetime('now') WHERE id = ?1",
-                params![client_id],
-            );
+            let other_active: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM enrollments
+                     WHERE client_id = ?1
+                       AND carrier_id != ?2
+                       AND status_code = 'ACTIVE'",
+                    params![client_id, carrier_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if other_active == 0 {
+                let _ = conn.execute(
+                    "UPDATE clients SET is_active = 0, updated_at = datetime('now') WHERE id = ?1",
+                    params![client_id],
+                );
+            }
         }
 
         let enrollment_input = CreateEnrollmentInput {

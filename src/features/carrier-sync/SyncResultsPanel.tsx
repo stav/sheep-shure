@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Card,
@@ -11,6 +13,7 @@ import {
 import { isPortalMemberActive } from "./utils";
 import { DisenrollmentSection } from "./DisenrollmentSection";
 import { NewInPortalSection } from "./NewInPortalSection";
+import { useImportPortalMembers } from "@/hooks/useCarrierSync";
 import type { Carrier, SyncResult, PortalMember, ImportPortalResult } from "@/types";
 
 type StatView = "portal" | "active" | "inactive" | "matched" | "disenrolled" | null;
@@ -23,6 +26,8 @@ function MatchTierBadge({ tier }: { tier: string }) {
       return <Badge variant="outline" className="text-xs text-amber-600">Fuzzy Match</Badge>;
     case "mbi":
       return <Badge variant="outline" className="text-xs text-blue-600">MBI Match</Badge>;
+    case "existing_client":
+      return <Badge variant="outline" className="text-xs text-purple-600">Existing Client</Badge>;
     default:
       return <Badge variant="outline" className="text-xs text-green-700">Matched</Badge>;
   }
@@ -60,6 +65,19 @@ export function SyncResultsPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const [expandedStat, setExpandedStat] = useState<StatView>(null);
 
+  // Split matched members into enrollment matches vs existing-client matches
+  const enrollmentMatches = result.matched_members.filter(
+    (m) => m.match_tier !== "existing_client",
+  );
+  const clientOnlyMatches = result.matched_members.filter(
+    (m) => m.match_tier === "existing_client",
+  );
+
+  // Import state for existing-client matches
+  const [selectedClientMatches, setSelectedClientMatches] = useState<Set<number>>(new Set());
+  const [clientMatchImportResult, setClientMatchImportResult] = useState<ImportPortalResult | null>(null);
+  const importExistingClients = useImportPortalMembers();
+
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
@@ -73,6 +91,44 @@ export function SyncResultsPanel({
       onUpdateExpected(parsed);
     }
     setEditing(false);
+  };
+
+  const toggleClientMatch = (index: number) => {
+    setSelectedClientMatches((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleAllClientMatches = () => {
+    if (selectedClientMatches.size === clientOnlyMatches.length) {
+      setSelectedClientMatches(new Set());
+    } else {
+      setSelectedClientMatches(new Set(clientOnlyMatches.map((_, i) => i)));
+    }
+  };
+
+  const handleImportClientMatches = () => {
+    const selected = clientOnlyMatches.filter((_, i) => selectedClientMatches.has(i));
+    if (selected.length === 0) return;
+
+    const members = selected.map((m) => m.portal_member);
+    setClientMatchImportResult(null);
+    importExistingClients.mutate(
+      { carrierId, membersJson: JSON.stringify(members) },
+      {
+        onSuccess: (res) => {
+          setClientMatchImportResult(res);
+          setSelectedClientMatches(new Set());
+          onImported(res, members);
+        },
+        onError: (err) => {
+          setClientMatchImportResult({ imported: 0, imported_names: [], errors: [String(err)] });
+        },
+      },
+    );
   };
 
   const toggleStat = (stat: StatView) =>
@@ -212,28 +268,103 @@ export function SyncResultsPanel({
         )}
 
         {expandedStat === "matched" && (
-          <ScrollArea className="h-48">
-            <div className="space-y-1">
-              {result.matched_members.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">
-                  No matched members.
-                </p>
-              ) : (
-                result.matched_members.map((m, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between rounded-md border border-green-200 bg-green-50 p-2 text-sm dark:border-green-900 dark:bg-green-950"
-                  >
-                    <span className="font-medium">{m.client_name}</span>
-                    <span className="text-muted-foreground">
-                      {m.portal_member.plan_name ?? "—"}
-                    </span>
-                    <MatchTierBadge tier={m.match_tier} />
+          <div className="space-y-3">
+            {/* Enrollment matches — read-only */}
+            {enrollmentMatches.length > 0 && (
+              <ScrollArea className="h-48">
+                <div className="space-y-1">
+                  {enrollmentMatches.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-md border border-green-200 bg-green-50 p-2 text-sm dark:border-green-900 dark:bg-green-950"
+                    >
+                      <span className="font-medium">{m.client_name}</span>
+                      <span className="text-muted-foreground">
+                        {m.portal_member.plan_name ?? "—"}
+                      </span>
+                      <MatchTierBadge tier={m.match_tier} />
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+
+            {/* Existing-client matches — importable */}
+            {clientOnlyMatches.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-purple-700 dark:text-purple-400">
+                    Existing Clients ({clientOnlyMatches.length})
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={toggleAllClientMatches}>
+                      {selectedClientMatches.size === clientOnlyMatches.length ? "Deselect All" : "Select All"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={selectedClientMatches.size === 0 || importExistingClients.isPending}
+                      onClick={handleImportClientMatches}
+                    >
+                      {importExistingClients.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      Import Selected ({selectedClientMatches.size})
+                    </Button>
                   </div>
-                ))
-              )}
-            </div>
-          </ScrollArea>
+                </div>
+
+                {clientMatchImportResult && (
+                  <div
+                    className={`mb-2 rounded-md border p-3 text-sm ${
+                      clientMatchImportResult.errors.length > 0
+                        ? "border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
+                        : "border-green-300 bg-green-50 dark:border-green-800 dark:bg-green-950"
+                    }`}
+                  >
+                    <p className="font-medium">
+                      Imported {clientMatchImportResult.imported} enrollment{clientMatchImportResult.imported !== 1 ? "s" : ""} successfully.
+                      {clientMatchImportResult.imported_names.length > 0 && (
+                        <span className="font-normal"> ({clientMatchImportResult.imported_names.join(", ")})</span>
+                      )}
+                    </p>
+                    {clientMatchImportResult.errors.map((err, i) => (
+                      <p key={i} className="mt-1 text-destructive">{err}</p>
+                    ))}
+                  </div>
+                )}
+
+                <ScrollArea className="h-48">
+                  <div className="space-y-1">
+                    {clientOnlyMatches.map((m, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 rounded-md border border-purple-200 bg-purple-50 p-2 text-sm dark:border-purple-900 dark:bg-purple-950"
+                      >
+                        <Checkbox
+                          checked={selectedClientMatches.has(i)}
+                          onCheckedChange={() => toggleClientMatch(i)}
+                        />
+                        <span className="min-w-[140px] font-medium">{m.client_name}</span>
+                        <span className="flex-1 text-muted-foreground">
+                          {m.portal_member.plan_name ?? "—"}
+                        </span>
+                        <Badge variant={isPortalMemberActive(m.portal_member) ? "secondary" : "destructive"} className="text-xs">
+                          {isPortalMemberActive(m.portal_member) ? "Active" : "Inactive"}
+                        </Badge>
+                        <MatchTierBadge tier={m.match_tier} />
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {enrollmentMatches.length === 0 && clientOnlyMatches.length === 0 && (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No matched members.
+              </p>
+            )}
+          </div>
         )}
 
         {expandedStat === "disenrolled" && (
