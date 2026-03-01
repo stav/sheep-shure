@@ -39,6 +39,9 @@ pub fn get_dashboard_stats(conn: &Connection) -> Result<DashboardStats, AppError
     // By carrier (name, actual active count, expected active count)
     let by_carrier = query_carrier_breakdown(conn)?;
 
+    // Per-plan breakdown within each carrier
+    let carrier_plans = query_carrier_plans(conn)?;
+
     // By state
     let by_state = query_pairs(conn,
         "SELECT COALESCE(cl.state, 'Unknown'), COUNT(*) FROM clients cl WHERE cl.is_active = 1 AND cl.state IS NOT NULL GROUP BY cl.state ORDER BY COUNT(*) DESC LIMIT 15"
@@ -54,6 +57,7 @@ pub fn get_dashboard_stats(conn: &Connection) -> Result<DashboardStats, AppError
         pending_enrollments: pending,
         by_plan_type,
         by_carrier,
+        carrier_plans,
         by_state,
         monthly_trend,
     })
@@ -86,6 +90,27 @@ fn query_carrier_breakdown(conn: &Connection) -> Result<Vec<(String, i64, i64)>,
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, i64>(2)?))
+    })?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+fn query_carrier_plans(conn: &Connection) -> Result<Vec<(String, String, i64)>, AppError> {
+    let sql = "SELECT COALESCE(c.short_name, c.name, 'No Carrier'), \
+               COALESCE(e.plan_name, 'Unknown'), \
+               COUNT(DISTINCT cl.id) \
+               FROM clients cl \
+               JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' AND e.is_active = 1 \
+               LEFT JOIN carriers c ON e.carrier_id = c.id \
+               WHERE cl.is_active = 1 \
+               GROUP BY COALESCE(c.short_name, c.name, 'No Carrier'), COALESCE(e.plan_name, 'Unknown') \
+               ORDER BY COALESCE(c.short_name, c.name, 'No Carrier'), COUNT(DISTINCT cl.id) DESC";
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
     })?;
     let mut result = Vec::new();
     for row in rows {

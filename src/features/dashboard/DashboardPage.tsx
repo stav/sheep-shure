@@ -67,6 +67,14 @@ export function DashboardPage() {
 
   const planTypeData = stats.by_plan_type.map(([name, value]) => ({ name, value }));
   const carrierData = stats.by_carrier.map(([name, actual, expected]) => ({ name, value: actual, expected }));
+
+  // Group carrier_plans by carrier name for tooltip lookups
+  const carrierPlanMap = new Map<string, { plan: string; count: number }[]>();
+  for (const [carrier, plan, count] of stats.carrier_plans) {
+    if (!carrierPlanMap.has(carrier)) carrierPlanMap.set(carrier, []);
+    carrierPlanMap.get(carrier)!.push({ plan, count });
+  }
+
   const trendData = stats.monthly_trend.map((t) => ({
     month: t.month,
     New: t.new_clients,
@@ -135,7 +143,7 @@ export function DashboardPage() {
                     outerRadius={100}
                     paddingAngle={2}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, value }) => `${name} ${value}`}
                   >
                     {carrierData.map((entry, index) => {
                       const key = entry.name.toLowerCase();
@@ -145,7 +153,25 @@ export function DashboardPage() {
                       return <Cell key={index} fill={color} />;
                     })}
                   </Pie>
-                  <Tooltip formatter={(value: number, _name: string, props: { payload?: { name?: string } }) => [value, props.payload?.name ?? ""]} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const { name, value } = payload[0].payload;
+                      const plans = carrierPlanMap.get(name) || [];
+                      return (
+                        <div className="rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
+                          <p className="font-medium">{name}: {value}</p>
+                          {plans.length > 0 && (
+                            <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                              {plans.map((p) => (
+                                <li key={p.plan}>{p.plan} — {p.count}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
                   <text x="50%" y="46%" textAnchor="middle" dominantBaseline="central" className="fill-foreground text-2xl font-bold">
                     {carrierData.reduce((sum, c) => sum + c.value, 0)}
                   </text>
