@@ -74,9 +74,13 @@ pub async fn open_carrier_login(
 
     // Override window.open — Tauri webviews have no popup/tab support,
     // so redirect window.open() calls to navigate in the current window.
-    combined_script.push_str(
-        "(function(){window.open=function(url){if(url)window.location.href=url;return window;}})();\n",
-    );
+    // Some portals (e.g. Anthem) opt out because their SSO flow uses
+    // window.open in ways that cause redirect loops when overridden.
+    if portal.override_window_open() {
+        combined_script.push_str(
+            "(function(){window.open=function(url){if(url)window.location.href=url;return window;}})();\n",
+        );
+    }
 
     if let Some(ref creds) = saved_creds {
         // Inject credentials as a JS object (JSON-escaped for safety)

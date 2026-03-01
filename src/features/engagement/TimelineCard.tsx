@@ -135,10 +135,23 @@ function MeetingDetails({ entry }: { entry: Entry }) {
 
 function SystemDetails({ entry }: { entry: Entry }) {
   const eventType = entry.system_event_type?.replace(/_/g, " ").toLowerCase();
+  const data = (() => {
+    try {
+      return entry.system_event_data ? JSON.parse(entry.system_event_data) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const detail = [data?.carrier_name, data?.plan_name].filter(Boolean).join(" — ");
   return (
-    <span className="text-xs text-muted-foreground italic">
-      {eventType || "System event"}
-    </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-muted-foreground italic">
+        {eventType || "System event"}
+      </span>
+      {detail && (
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      )}
+    </div>
   );
 }
 

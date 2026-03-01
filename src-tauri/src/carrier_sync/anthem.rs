@@ -7,20 +7,48 @@ use super::CarrierPortal;
 
 pub struct AnthemPortal;
 
-const LOGIN_URL: &str = "https://brokerportal.anthem.com/apps/ptb/bob/CHHGRKJQNZ";
+const LOGIN_URL: &str = "https://brokerportal.anthem.com/apps/ptb/login";
 
 /// Auto-login script: fills and submits the Anthem broker portal login form.
 const AUTO_LOGIN_SCRIPT: &str = r#"
 (function() {
-    if (!window.__compass_creds) return;
+    var TAG = '[Compass:Anthem]';
+    console.log(TAG, 'Auto-login script loaded on', window.location.href);
+    if (!window.__compass_creds) {
+        console.warn(TAG, 'No credentials found, skipping auto-login');
+        return;
+    }
+    console.log(TAG, 'Credentials present, will attempt auto-login');
+
+    var attempt = 0;
     function tryLogin() {
+        attempt++;
+        // Look for password field with multiple selectors
         var passField = document.querySelector('input[type="password"]');
-        if (!passField) return false;
+        if (!passField) {
+            if (attempt <= 5 || attempt % 10 === 0) {
+                console.log(TAG, 'Attempt', attempt, '- no password field found');
+                console.log(TAG, '  All inputs:', Array.from(document.querySelectorAll('input')).map(function(el) {
+                    return { type: el.type, name: el.name, id: el.id, placeholder: el.placeholder };
+                }));
+                console.log(TAG, '  Iframes:', document.querySelectorAll('iframe').length);
+            }
+            return false;
+        }
+        console.log(TAG, 'Found password field:', { name: passField.name, id: passField.id });
+
         var form = passField.closest('form');
         var userField = form
-            ? form.querySelector('input[type="text"], input[type="email"]')
-            : document.querySelector('input[type="text"], input[type="email"]');
-        if (!userField) return false;
+            ? form.querySelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[id*="user"], input[id*="login"]')
+            : document.querySelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[id*="user"], input[id*="login"]');
+        if (!userField) {
+            console.warn(TAG, 'Password field found but no username field. Form inputs:', form ? Array.from(form.querySelectorAll('input')).map(function(el) {
+                return { type: el.type, name: el.name, id: el.id };
+            }) : 'no form');
+            return false;
+        }
+        console.log(TAG, 'Found username field:', { name: userField.name, id: userField.id });
+
         var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
         nativeSet.call(userField, window.__compass_creds.username);
         userField.dispatchEvent(new Event('input', { bubbles: true }));
@@ -28,66 +56,86 @@ const AUTO_LOGIN_SCRIPT: &str = r#"
         nativeSet.call(passField, window.__compass_creds.password);
         passField.dispatchEvent(new Event('input', { bubbles: true }));
         passField.dispatchEvent(new Event('change', { bubbles: true }));
+
         var submit = form
             ? (form.querySelector('button[type="submit"], input[type="submit"]') || form.querySelector('button'))
             : document.querySelector('button[type="submit"], input[type="submit"]');
-        if (submit) { submit.click(); return true; }
+        if (submit) {
+            console.log(TAG, 'Clicking submit button:', { tag: submit.tagName, type: submit.type, text: submit.textContent.trim().substring(0, 50) });
+            submit.click();
+            return true;
+        }
+        console.warn(TAG, 'Fields filled but no submit button found');
         return false;
     }
     // Delay before polling to let SSO redirects complete naturally
     setTimeout(function() {
-        var iv = setInterval(function() { if (tryLogin()) clearInterval(iv); }, 500);
-        setTimeout(function() { clearInterval(iv); }, 15000);
+        console.log(TAG, 'Starting login polling on', window.location.href);
+        var iv = setInterval(function() { if (tryLogin()) { console.log(TAG, 'Login submitted!'); clearInterval(iv); } }, 500);
+        setTimeout(function() { clearInterval(iv); console.warn(TAG, 'Gave up after 15s'); }, 15000);
     }, 2000);
 })();
 "#;
 
-/// Intercept fetch/XHR to capture Bearer tokens and API base URLs
-/// from Anthem broker portal requests.
+/// Intercept fetch/XHR to capture Bearer tokens, XSRF tokens, and API base
+/// URLs from Anthem broker portal requests.
 const INIT_SCRIPT: &str = r#"
 (function() {
-    const origFetch = window.fetch;
+    var TAG = '[Compass:Anthem]';
+    var origFetch = window.fetch;
     window.fetch = function(resource, init) {
         try {
-            const url = typeof resource === 'string' ? resource :
+            var url = typeof resource === 'string' ? resource :
                          (resource instanceof Request ? resource.url : String(resource));
             if (url.includes('ptb') || url.includes('bob') || url.includes('broker')) {
-                const baseMatch = url.match(/(https:\/\/[^\/]+(?:\/[^\/]+)*\/(?:ptb|bob|broker)[^\/]*)/i);
-                if (baseMatch) window.__compass_anthem_api_base = baseMatch[1];
-                let headers = init && init.headers;
+                var headers = init && init.headers;
                 if (!headers && resource instanceof Request) headers = resource.headers;
                 if (headers) {
-                    let auth;
+                    var auth, xsrf;
                     if (headers instanceof Headers) {
                         auth = headers.get('Authorization');
+                        xsrf = headers.get('X-XSRF-TOKEN');
                     } else if (Array.isArray(headers)) {
-                        const e = headers.find(([k]) => k.toLowerCase() === 'authorization');
-                        auth = e ? e[1] : null;
+                        var ae = headers.find(function(h) { return h[0].toLowerCase() === 'authorization'; });
+                        auth = ae ? ae[1] : null;
+                        var xe = headers.find(function(h) { return h[0].toLowerCase() === 'x-xsrf-token'; });
+                        xsrf = xe ? xe[1] : null;
                     } else {
                         auth = headers['Authorization'] || headers['authorization'];
+                        xsrf = headers['X-XSRF-TOKEN'] || headers['x-xsrf-token'];
                     }
-                    if (auth && auth.startsWith('Bearer '))
+                    if (auth && auth.startsWith('Bearer ')) {
                         window.__compass_anthem_token = auth.substring(7);
+                        console.log(TAG, 'Captured Bearer token from fetch:', url.substring(0, 80));
+                    }
+                    if (xsrf) {
+                        window.__compass_anthem_xsrf = xsrf;
+                        console.log(TAG, 'Captured XSRF token from fetch');
+                    }
                 }
             }
         } catch (e) {}
         return origFetch.apply(this, arguments);
     };
 
-    const origOpen = XMLHttpRequest.prototype.open;
-    const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+    var origOpen = XMLHttpRequest.prototype.open;
+    var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
     XMLHttpRequest.prototype.open = function(method, url) {
         this.__compass_url = typeof url === 'string' ? url : String(url);
         return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
         try {
-            const url = this.__compass_url || '';
+            var url = this.__compass_url || '';
             if (url.includes('ptb') || url.includes('bob') || url.includes('broker')) {
-                if (name.toLowerCase() === 'authorization' && value.startsWith('Bearer '))
+                if (name.toLowerCase() === 'authorization' && value.startsWith('Bearer ')) {
                     window.__compass_anthem_token = value.substring(7);
-                const baseMatch = url.match(/(https:\/\/[^\/]+(?:\/[^\/]+)*\/(?:ptb|bob|broker)[^\/]*)/i);
-                if (baseMatch) window.__compass_anthem_api_base = baseMatch[1];
+                    console.log(TAG, 'Captured Bearer token from XHR:', url.substring(0, 80));
+                }
+                if (name.toLowerCase() === 'x-xsrf-token') {
+                    window.__compass_anthem_xsrf = value;
+                    console.log(TAG, 'Captured XSRF token from XHR');
+                }
             }
         } catch (e) {}
         return origSetHeader.apply(this, arguments);
@@ -95,42 +143,45 @@ const INIT_SCRIPT: &str = r#"
 })();
 "#;
 
-/// Scrape the Anthem Producer Toolbox "Book of Business" card layout.
-/// Each member is a div.expandCard containing:
-///   - Name in `.rowHeading h3 a`
-///   - Fields in `.columnAndValue` divs with `.columnLabel` + `.columnValue`
+/// Fetch Anthem Book of Business members via the portal REST API.
+/// Uses the Bearer token and XSRF token captured by INIT_SCRIPT.
+/// Paginates through all results using /apps/ptb/api/client/summary.
 const FETCH_SCRIPT: &str = r#"
 (async () => {
+    var TAG = '[Compass:Anthem]';
     try {
-        // Helper: wait for a condition with timeout
-        function waitFor(fn, ms) {
-            return new Promise(function(resolve) {
-                const start = Date.now();
-                const iv = setInterval(function() {
-                    const result = fn();
-                    if (result) { clearInterval(iv); resolve(result); }
-                    else if (Date.now() - start > ms) { clearInterval(iv); resolve(null); }
-                }, 300);
-            });
+        var token = window.__compass_anthem_token;
+        var xsrf = window.__compass_anthem_xsrf;
+
+        // Also try reading XSRF from cookie if not captured from headers
+        if (!xsrf) {
+            var match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+            if (match) xsrf = decodeURIComponent(match[1]);
         }
+
+        if (!token) {
+            throw new Error(
+                'No Bearer token captured. Navigate to the Book of Business page first so ' +
+                'the portal makes an authenticated API call, then click Sync Now again.'
+            );
+        }
+        console.log(TAG, 'Fetching BoB via API. Token:', token.substring(0, 20) + '...', 'XSRF:', xsrf ? 'yes' : 'no');
 
         // Convert MM/DD/YYYY to YYYY-MM-DD
         function toIso(dateStr) {
             if (!dateStr) return null;
             var m = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
             if (m) return m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0');
-            m = dateStr.match(/^\d{4}-\d{2}-\d{2}$/);
-            if (m) return dateStr;
             return dateStr;
         }
 
-        // Parse "last, first M" into {first, last} with title case
+        // Parse "LAST, FIRST M" into {first, last} with title case
         function parseName(nameStr) {
             if (!nameStr) return { first: '', last: '' };
-            const commaIdx = nameStr.indexOf(',');
+            var commaIdx = nameStr.indexOf(',');
             if (commaIdx === -1) return { first: titleCase(nameStr.trim()), last: '' };
-            const last = nameStr.substring(0, commaIdx).trim();
-            const first = nameStr.substring(commaIdx + 1).trim();
+            var last = nameStr.substring(0, commaIdx).trim();
+            var first = nameStr.substring(commaIdx + 1).trim();
             return { first: titleCase(first), last: titleCase(last) };
         }
 
@@ -141,107 +192,64 @@ const FETCH_SCRIPT: &str = r#"
             });
         }
 
-        // Wait for .expandCard elements to appear
-        const found = await waitFor(function() {
-            var cards = document.querySelectorAll('.expandCard');
-            return cards.length > 0 ? true : null;
-        }, 15000);
-
-        if (!found) {
-            var dbg = {
-                expandCards: document.querySelectorAll('.expandCard').length,
-                rowConts: document.querySelectorAll('.row-cont').length,
-                columnAndValues: document.querySelectorAll('.columnAndValue').length,
-                bodyTextSample: document.body ? document.body.innerText.substring(0, 500) : 'none'
+        // Fetch one page of members
+        async function fetchPage(pageNumber) {
+            var url = '/apps/ptb/api/client/summary?pageNumber=' + pageNumber +
+                      '&pageSize=100&sortBy=ClientName';
+            var headers = {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             };
-            throw new Error(
-                'Could not find member cards (.expandCard). Make sure you are logged in and on the Book of Business page. Debug: ' +
-                JSON.stringify(dbg)
-            );
+            if (xsrf) headers['X-XSRF-TOKEN'] = xsrf;
+
+            console.log(TAG, 'Fetching page', pageNumber, url);
+            var resp = await fetch(url, { method: 'POST', headers: headers });
+            if (!resp.ok) throw new Error('API returned ' + resp.status + ': ' + resp.statusText);
+            return resp.json();
         }
 
-        // Check if all records are showing ("X of X Records")
-        function allRecordsVisible() {
-            var recText = document.body.innerText.match(/(\d+)\s+of\s+(\d+)\s+Records/i);
-            if (recText) {
-                return parseInt(recText[1]) >= parseInt(recText[2]);
-            }
-            return true;
-        }
-
-        // Scroll down to load more if the portal uses lazy loading
-        if (!allRecordsVisible()) {
-            for (var scroll = 0; scroll < 30; scroll++) {
-                window.scrollTo(0, document.body.scrollHeight);
-                await new Promise(function(r) { setTimeout(r, 1000); });
-                if (allRecordsVisible()) break;
-            }
-        }
-
-        // Scrape all .expandCard elements
-        var cards = document.querySelectorAll('.expandCard');
+        // Fetch all pages
         var allMembers = [];
+        var page = 1;
+        while (true) {
+            var data = await fetchPage(page);
+            var members = data.bookOfBusiness || [];
+            console.log(TAG, 'Page', page, ':', members.length, 'members,',
+                         data.metadata.page.totalElements, 'total');
 
-        for (var i = 0; i < cards.length; i++) {
-            var card = cards[i];
-
-            // Get name from .rowHeading h3 a
-            var nameEl = card.querySelector('.rowHeading h3 a') ||
-                         card.querySelector('[data-test="rowHeading"] h3 a') ||
-                         card.querySelector('h3 a');
-            if (!nameEl) continue;
-            var name = parseName(nameEl.textContent.trim());
-
-            // Extract all label-value pairs from .columnAndValue divs
-            var fieldMap = {};
-            var pairs = card.querySelectorAll('.columnAndValue');
-            for (var j = 0; j < pairs.length; j++) {
-                var labelEl = pairs[j].querySelector('.columnLabel');
-                var valueEl = pairs[j].querySelector('.columnValue') ||
-                              pairs[j].querySelector('[data-test="detailsContent"]');
-                if (labelEl && valueEl) {
-                    var label = labelEl.textContent.trim();
-                    var value = valueEl.textContent.trim();
-                    if (label && value) {
-                        fieldMap[label] = value;
-                    }
-                }
+            for (var i = 0; i < members.length; i++) {
+                var m = members[i];
+                var name = parseName(m.clientName);
+                var status = (m.clientStatus || 'active').toLowerCase();
+                var isActive = status === 'active';
+                allMembers.push({
+                    first_name: name.first,
+                    last_name: name.last,
+                    member_id: m.clientID || null,
+                    dob: null,
+                    plan_name: m.planType || m.productType || null,
+                    effective_date: toIso(m.originalEffectiveDate || m.effectiveDate || null),
+                    end_date: m.cancellationDate ? toIso(m.cancellationDate) : null,
+                    status: status,
+                    policy_status: m.latestBillStatus || null,
+                    state: m.state || null,
+                    city: null,
+                    phone: null,
+                    email: null
+                });
             }
 
-            var status = (fieldMap['Status'] || 'active').toLowerCase();
-            var isActive = status === 'active';
-
-            allMembers.push({
-                first_name: name.first,
-                last_name: name.last,
-                member_id: fieldMap['Client ID'] || null,
-                dob: null,
-                plan_name: fieldMap['Product(s)'] || null,
-                effective_date: isActive ? toIso(fieldMap['Original Effective Date'] || fieldMap['Effective Date'] || null) : null,
-                end_date: !isActive ? toIso(fieldMap['Cancellation Date'] || null) : null,
-                status: status,
-                policy_status: fieldMap['Bill Status'] || null,
-                state: fieldMap['State'] || null,
-                city: null,
-                phone: null,
-                email: null
-            });
+            var totalPages = data.metadata.page.totalPages;
+            if (page >= totalPages) break;
+            page++;
         }
 
-        if (allMembers.length === 0) {
-            var cardsFound = document.querySelectorAll('.expandCard').length;
-            var dbg2 = {
-                expandCardsFound: cardsFound,
-                firstCardHtml: cardsFound > 0 ? document.querySelector('.expandCard').innerHTML.substring(0, 500) : 'none',
-                columnAndValueCount: document.querySelectorAll('.columnAndValue').length,
-                columnLabelCount: document.querySelectorAll('.columnLabel').length
-            };
-            throw new Error('Found cards but could not scrape members. Debug: ' + JSON.stringify(dbg2));
-        }
-
+        console.log(TAG, 'Total members fetched:', allMembers.length);
         window.location.href = 'http://compass-sync.localhost/data?members=' +
             encodeURIComponent(JSON.stringify(allMembers));
     } catch (e) {
+        console.error(TAG, 'Fetch error:', e);
         window.location.href = 'http://compass-sync.localhost/error?message=' +
             encodeURIComponent(e.toString());
     }
@@ -272,6 +280,10 @@ impl CarrierPortal for AnthemPortal {
 
     fn auto_login_script(&self) -> &str {
         AUTO_LOGIN_SCRIPT
+    }
+
+    fn override_window_open(&self) -> bool {
+        false
     }
 
     fn sync_instruction(&self) -> &str {
