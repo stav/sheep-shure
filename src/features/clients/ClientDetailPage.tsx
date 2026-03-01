@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useClient, useUpdateClient, useHardDeleteClient } from "@/hooks/useClients";
-import { useEnrollments } from "@/hooks/useEnrollments";
+import { useEnrollments, useCreateEnrollment, useUpdateEnrollment, useDeleteEnrollment } from "@/hooks/useEnrollments";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info, UserX, UserCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Loader2, Phone, MapPin, CreditCard, Info, UserX, UserCheck, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ClientEngagementSection } from "@/features/engagement";
+import { EnrollmentFormDialog } from "@/features/enrollments/EnrollmentFormDialog";
 import { formatMbi, formatPhone, formatTimestamp } from "@/lib/utils";
 import { tauriInvoke } from "@/lib/tauri";
+import type { Enrollment } from "@/types";
 
 const OREC_LABELS: Record<string, string> = {
   "0": "Age",
@@ -39,7 +41,13 @@ export function ClientDetailPage() {
   const { data: enrollments } = useEnrollments(id);
   const updateClient = useUpdateClient();
   const hardDelete = useHardDeleteClient();
+  const createEnrollment = useCreateEnrollment();
+  const updateEnrollment = useUpdateEnrollment();
+  const deleteEnrollment = useDeleteEnrollment();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingEnrollmentDelete, setConfirmingEnrollmentDelete] = useState<string | null>(null);
+  const [enrollmentDialogOpen, setEnrollmentDialogOpen] = useState(false);
+  const [editingEnrollment, setEditingEnrollment] = useState<Enrollment | undefined>();
 
   if (isLoading) {
     return (
@@ -217,7 +225,19 @@ export function ClientDetailPage() {
 
       {/* Enrollments */}
       <div>
-        <h2 className="text-lg font-semibold mb-4">Enrollments</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Enrollments</h2>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingEnrollment(undefined);
+              setEnrollmentDialogOpen(true);
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Enrollment
+          </Button>
+        </div>
         {enrollments && enrollments.length > 0 ? (
           <div className="rounded-md border">
             <table className="w-full text-sm">
@@ -228,6 +248,7 @@ export function ClientDetailPage() {
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Type</th>
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Status</th>
                   <th className="h-10 px-4 text-left font-medium text-muted-foreground">Effective</th>
+                  <th className="h-10 px-4 text-right font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -238,6 +259,64 @@ export function ClientDetailPage() {
                     <td className="px-4 py-3">{e.plan_type || "\u2014"}</td>
                     <td className="px-4 py-3">{e.status || "\u2014"}</td>
                     <td className="px-4 py-3">{e.effective_date || "\u2014"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={async () => {
+                            try {
+                              const full = await tauriInvoke<Enrollment>("get_enrollment", { id: e.id });
+                              setEditingEnrollment(full);
+                              setEnrollmentDialogOpen(true);
+                            } catch (err) {
+                              toast.error(String(err));
+                            }
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {confirmingEnrollmentDelete === e.id ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => setConfirmingEnrollmentDelete(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-8 text-xs"
+                              disabled={deleteEnrollment.isPending}
+                              onClick={() => {
+                                deleteEnrollment.mutate(e.id, {
+                                  onSuccess: () => {
+                                    toast.success("Enrollment deleted");
+                                    setConfirmingEnrollmentDelete(null);
+                                  },
+                                  onError: (err) => toast.error(String(err)),
+                                });
+                              }}
+                            >
+                              {deleteEnrollment.isPending ? "..." : "Delete"}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-red-600"
+                            onClick={() => setConfirmingEnrollmentDelete(e.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -247,6 +326,40 @@ export function ClientDetailPage() {
           <p className="text-sm text-muted-foreground">No enrollments found.</p>
         )}
       </div>
+
+      <EnrollmentFormDialog
+        open={enrollmentDialogOpen}
+        onOpenChange={(open) => {
+          setEnrollmentDialogOpen(open);
+          if (!open) setEditingEnrollment(undefined);
+        }}
+        enrollment={editingEnrollment}
+        clientId={client.id}
+        onSubmit={(input) => {
+          if (editingEnrollment) {
+            updateEnrollment.mutate(
+              { id: editingEnrollment.id, input },
+              {
+                onSuccess: () => {
+                  toast.success("Enrollment updated");
+                  setEnrollmentDialogOpen(false);
+                  setEditingEnrollment(undefined);
+                },
+                onError: (err) => toast.error(String(err)),
+              }
+            );
+          } else {
+            createEnrollment.mutate(input, {
+              onSuccess: () => {
+                toast.success("Enrollment created");
+                setEnrollmentDialogOpen(false);
+              },
+              onError: (err) => toast.error(String(err)),
+            });
+          }
+        }}
+        isPending={createEnrollment.isPending || updateEnrollment.isPending}
+      />
 
       <Separator />
 

@@ -159,6 +159,16 @@ pub fn create_enrollment(conn: &Connection, id: &str, input: &CreateEnrollmentIn
     Ok(())
 }
 
+/// Soft delete an enrollment
+pub fn delete_enrollment(conn: &Connection, id: &str) -> Result<(), AppError> {
+    let sql = "UPDATE enrollments SET is_active = 0, updated_at = datetime('now') WHERE id = ?1";
+    let rows = conn.execute(sql, params![id])?;
+    if rows == 0 {
+        return Err(AppError::NotFound(format!("Enrollment {} not found", id)));
+    }
+    Ok(())
+}
+
 /// Update an enrollment
 pub fn update_enrollment(conn: &Connection, id: &str, input: &UpdateEnrollmentInput) -> Result<(), AppError> {
     let sql = "UPDATE enrollments SET plan_id = COALESCE(?2, plan_id), carrier_id = COALESCE(?3, carrier_id),
