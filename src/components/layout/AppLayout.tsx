@@ -97,15 +97,16 @@ export function AppLayout() {
   // Show all nav while loading to avoid flash; once loaded, check client count
   const hasClients = statsLoading || (stats?.total_active_clients ?? 0) > 0;
 
+  const emptyDbPages = new Set(["/import", "/carrier-sync"]);
   const visibleNavItems = useMemo(
-    () => (hasClients ? navItems : navItems.filter((item) => item.to === "/import")),
+    () => (hasClients ? navItems : navItems.filter((item) => emptyDbPages.has(item.to))),
     [hasClients]
   );
 
   // Redirect away from data-dependent pages when no clients exist
   useEffect(() => {
     if (statsLoading) return;
-    if (!hasClients && location.pathname !== "/import" && location.pathname !== "/settings") {
+    if (!hasClients && !emptyDbPages.has(location.pathname) && location.pathname !== "/settings") {
       navigate("/import", { replace: true });
     }
   }, [hasClients, statsLoading, location.pathname, navigate]);
