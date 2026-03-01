@@ -308,14 +308,20 @@ pub fn import_portal_members(
         let status_code = {
             let s = member.status.as_deref().unwrap_or("").to_lowercase();
             let ps = member.policy_status.as_deref().unwrap_or("").to_lowercase();
-            // Explicitly inactive / canceled
-            if ps.contains("inactive") || s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
+            // policy_status is the most granular signal — check it first
+            if !ps.is_empty() {
+                if ps.contains("inactive") {
+                    "CANCELLED"
+                } else if ps.contains("active") {
+                    // Covers "Active Policy" and "Future Active Policy"
+                    "ACTIVE"
+                } else {
+                    "PENDING"
+                }
+            // Fall back to generic status field
+            } else if s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
                 "CANCELLED"
-            // Explicitly active
-            } else if ps.contains("active") || s.contains("active") || s == "enrolled" {
-                "ACTIVE"
-            // Blank status = active (e.g. Medical Mutual)
-            } else if s.trim().is_empty() {
+            } else if s.contains("active") || s == "enrolled" || s.trim().is_empty() {
                 "ACTIVE"
             } else {
                 "PENDING"
