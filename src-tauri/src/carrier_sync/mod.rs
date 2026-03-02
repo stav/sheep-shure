@@ -49,6 +49,14 @@ pub trait CarrierPortal: Send + Sync {
         false
     }
 
+    /// Whether to override `window.open()` to navigate in the same webview.
+    /// Tauri webviews can't open popups, so this is needed for portals that
+    /// use `window.open` for navigation. Disable for portals whose SSO flow
+    /// breaks when popups are converted to same-window navigations (redirect loops).
+    fn override_window_open(&self) -> bool {
+        true
+    }
+
     /// Instruction text shown in the UI while the user is in the login phase.
     fn sync_instruction(&self) -> &str {
         "Log in, navigate to the Book of Business page, then click Sync Now."

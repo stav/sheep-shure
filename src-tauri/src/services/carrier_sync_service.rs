@@ -214,9 +214,11 @@ fn log_sync(
     Ok(())
 }
 
-/// Find an existing client by MBI or by (first_name, last_name, DOB).
-/// Searches both active and inactive clients so that a re-appearing member
-/// reuses the existing record instead of creating a duplicate.
+/// Find an existing client by MBI, by (first_name, last_name, DOB), or by
+/// unique name match.  Searches both active and inactive clients so that a
+/// re-appearing member reuses the existing record instead of creating a duplicate.
+/// Enables name-only matching so portals that don't provide DOB/MBI (e.g. Anthem)
+/// can still match when exactly one client with that name exists.
 fn find_existing_client(
     conn: &Connection,
     member: &PortalMember,
@@ -227,7 +229,10 @@ fn find_existing_client(
         &member.first_name,
         &member.last_name,
         member.dob.as_deref(),
-        &matching::MatchOptions::default(),
+        &matching::MatchOptions {
+            allow_name_only_unique: true,
+            ..Default::default()
+        },
     )
     .map(|m| m.client_id)
 }
@@ -242,15 +247,24 @@ pub fn import_portal_members(
     let mut imported_names = Vec::new();
     let mut errors = Vec::new();
 
+    // Look up carrier name for event messages
+    let carrier_name: String = conn
+        .query_row(
+            "SELECT name FROM carriers WHERE id = ?1",
+            params![carrier_id],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| carrier_id.to_string());
+
     for member in members {
         // Check for an existing client (active or inactive) before creating a new one
-        let client_id = if let Some(existing_id) = find_existing_client(conn, member) {
+        let (client_id, is_existing) = if let Some(existing_id) = find_existing_client(conn, member) {
             // Reactivate if the matched client is inactive
             let _ = conn.execute(
                 "UPDATE clients SET is_active = 1, updated_at = datetime('now') WHERE id = ?1 AND is_active = 0",
                 params![existing_id],
             );
-            existing_id
+            (existing_id, true)
         } else {
             let client_input = CreateClientInput {
                 first_name: member.first_name.clone(),
@@ -282,7 +296,7 @@ pub fn import_portal_members(
             };
 
             match client_service::create_client(conn, &client_input) {
-                Ok(c) => c.id,
+                Ok(c) => (c.id, false),
                 Err(e) => {
                     errors.push(format!(
                         "{} {}: failed to create client — {}",
@@ -293,29 +307,39 @@ pub fn import_portal_members(
             }
         };
 
+        let event_type = if is_existing { "ENROLLMENT_IMPORTED" } else { "CLIENT_IMPORTED" };
         let event_data = serde_json::json!({
             "carrier_id": carrier_id,
+            "carrier_name": carrier_name,
+            "plan_name": member.plan_name,
+            "status": member.status,
             "source": "carrier_sync",
         })
         .to_string();
         let _ = conversation_service::create_system_event(
             conn,
             &client_id,
-            "CLIENT_IMPORTED",
+            event_type,
             Some(&event_data),
         );
 
         let status_code = {
             let s = member.status.as_deref().unwrap_or("").to_lowercase();
             let ps = member.policy_status.as_deref().unwrap_or("").to_lowercase();
-            // Explicitly inactive / canceled
-            if ps.contains("inactive") || s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
+            // policy_status is the most granular signal — check it first
+            if !ps.is_empty() {
+                if ps.contains("inactive") {
+                    "CANCELLED"
+                } else if ps.contains("active") {
+                    // Covers "Active Policy" and "Future Active Policy"
+                    "ACTIVE"
+                } else {
+                    "PENDING"
+                }
+            // Fall back to generic status field
+            } else if s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
                 "CANCELLED"
-            // Explicitly active
-            } else if ps.contains("active") || s.contains("active") || s == "enrolled" {
-                "ACTIVE"
-            // Blank status = active (e.g. Medical Mutual)
-            } else if s.trim().is_empty() {
+            } else if s.contains("active") || s == "enrolled" || s.trim().is_empty() {
                 "ACTIVE"
             } else {
                 "PENDING"
@@ -339,7 +363,7 @@ pub fn import_portal_members(
             contract_number: None,
             pbp_number: None,
             effective_date: member.effective_date.clone(),
-            termination_date: None,
+            termination_date: member.end_date.clone(),
             application_date: member.application_date.clone(),
             status_code: Some(status_code.to_string()),
             enrollment_period: None,

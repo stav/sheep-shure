@@ -50,6 +50,7 @@ Webview (carrier portal)
 | `src-tauri/src/carrier_sync/medmutual.rs` | Medical Mutual — [docs](carriers/medical-mutual.md) |
 | `src-tauri/src/carrier_sync/uhc.rs` | UnitedHealthcare — [docs](carriers/unitedhealthcare.md) |
 | `src-tauri/src/carrier_sync/humana.rs` | Humana — [docs](carriers/humana.md) |
+| `src-tauri/src/carrier_sync/anthem.rs` | Anthem/Elevance — [docs](carriers/anthem.md) |
 | `src-tauri/src/commands/carrier_sync_commands.rs` | Tauri IPC commands |
 | `src-tauri/src/services/carrier_sync_service.rs` | Comparison logic, auto-disenrollment |
 | `src-tauri/src/models/carrier_sync.rs` | `PortalMember`, `SyncResult`, `SyncLogEntry` |
@@ -63,11 +64,15 @@ Each carrier implements this trait:
 
 ```rust
 pub trait CarrierPortal: Send + Sync {
-    fn carrier_id(&self) -> &str;       // e.g. "carrier-devoted"
-    fn carrier_name(&self) -> &str;     // e.g. "Devoted Health"
-    fn login_url(&self) -> &str;        // portal login URL
-    fn init_script(&self) -> &str;      // optional JS at document-start
-    fn fetch_script(&self) -> &str;     // JS to fetch member data
+    fn carrier_id(&self) -> &str;           // e.g. "carrier-devoted"
+    fn carrier_name(&self) -> &str;         // e.g. "Devoted Health"
+    fn login_url(&self) -> &str;            // portal login URL
+    fn init_script(&self) -> &str;          // optional JS at document-start (default: "")
+    fn auto_login_script(&self) -> &str;    // optional JS to auto-fill login form (default: "")
+    fn fetch_script(&self) -> &str;         // JS to fetch member data
+    fn auto_fetch(&self) -> bool;           // skip manual "Sync Now" step (default: false)
+    fn override_window_open(&self) -> bool; // override window.open() in webview (default: true)
+    fn sync_instruction(&self) -> &str;     // instruction text during login phase
     async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError>;
 }
 ```
@@ -94,12 +99,13 @@ Each carrier has a detailed doc in `docs/carriers/`:
 | Medical Mutual | HTML scraping | Server-rendered `#member-table`, `DOMParser` | [medical-mutual.md](carriers/medical-mutual.md) |
 | UnitedHealthcare | REST API | Multi-stage partyID fallback, deep storage search | [unitedhealthcare.md](carriers/unitedhealthcare.md) |
 | Humana | DOM table scraping | Split-table grid, live DOM, pagination | [humana.md](carriers/humana.md) |
+| Anthem/Elevance | REST API | Bearer + XSRF token interception, paginated POST API | [anthem.md](carriers/anthem.md) |
 
 ### Approach Summary
 
-Three distinct patterns emerged across the 5 implementations:
+Three distinct patterns emerged across the 6 implementations:
 
-1. **API calls** (Devoted, CareSource, UHC): Call the same REST/GraphQL APIs the portal SPA uses, leveraging the webview's authenticated session. Best for SPAs with clean APIs.
+1. **API calls** (Devoted, CareSource, UHC, Anthem): Call the same REST/GraphQL APIs the portal SPA uses, leveraging the webview's authenticated session. Best for SPAs with clean APIs.
 2. **Server-rendered HTML** (Medical Mutual): Fetch the HTML page via AJAX and parse with `DOMParser`. Best for traditional server-rendered sites.
 3. **Live DOM scraping** (Humana): Read data directly from the rendered page's DOM. Needed when the data is loaded before any script injection and no API can be identified.
 
@@ -108,7 +114,7 @@ Three distinct patterns emerged across the 5 implementations:
 1. Create `src-tauri/src/carrier_sync/<carrier>.rs` implementing `CarrierPortal`
 2. Add `pub mod <carrier>;` to `carrier_sync/mod.rs`
 3. Register in `get_portal()` match arm
-4. Add the carrier to the `CARRIERS` array in `CarrierSyncPage.tsx` (change status from `coming_soon` to `available`)
+4. Add the carrier to the `CARRIERS` array in `src/features/carrier-sync/utils.ts` (change status from `coming_soon` to `available`)
 5. Match the `carrier_id` to the seed data in `db/seed.rs` (e.g. `carrier-alignment`)
 
 ### Reverse-Engineering a New Carrier Portal
@@ -150,7 +156,7 @@ Ranked by automation difficulty based on auth complexity, anti-bot measures, and
 | 8 | Zing Health | Easy-Mod | EvolveNXT platform, reCAPTCHA, email/password + security Q's | -- |
 | 9 | Cigna | Easy-Mod | Low anti-bot, agent-number login, multi-format downloads | -- |
 | 10 | Molina (EvolveNXT) | Moderate | jQuery server-rendered, reCAPTCHA v3, Excel export | -- |
-| 11 | Anthem BCBS (Producer Toolbox) | Moderate | SPA + Akamai, partner API exists | -- |
+| 11 | Anthem/Elevance (Broker Portal) | Moderate | REST API with Bearer + XSRF tokens, SSO requires `window.open` override disabled, auto-login support. | **Done** |
 | 12 | Mutual of Omaha | Mod-Hard | WebSphere, Symantec VIP MFA | -- |
 | 13 | WellCare/Centene | Mod-Hard | PingOne SSO | -- |
 | 14 | Aetna (Producer World) | Hard | Imperva Incapsula WAF, MFA (Acceptto push/SMS), enterprise Java | -- |
@@ -169,5 +175,5 @@ Ranked by automation difficulty based on auth complexity, anti-bot measures, and
 | SummaCare | <https://www.summacare.com/brokerstorehome> | -- |
 | Alignment Healthcare | TBD | -- |
 | Zing Health | <https://zing.sb.evolvenxt.com/> | -- |
-| Anthem BCBS | TBD (Producer Toolbox) | -- |
+| Anthem/Elevance | <https://brokerportal.anthem.com/apps/ptb/login> | Done |
 | Aetna | <https://www.aetna.com/producer_public/login.fcc> | -- |
