@@ -77,10 +77,9 @@ All routes are guarded by `AuthGuard` which checks `useAuthStore().isAuthenticat
 | `/clients/:id`         | ClientDetailPage  |
 | `/clients/:id/edit`    | ClientFormPage    |
 | `/clients/duplicates`  | DuplicateScanPage |
-| `/enrollments`         | EnrollmentsPage   |
 | `/import`              | ImportPage        |
-| `/reports`             | ReportsPage       |
 | `/carrier-sync`        | CarrierSyncPage   |
+| `/commissions`         | CommissionsPage   |
 | `/settings`            | SettingsPage      |
 
 See `src/app/router.tsx`.
@@ -123,7 +122,9 @@ Additional hooks beyond clients/enrollments:
 | Hook                  | File                          | Purpose                              |
 | --------------------- | ----------------------------- | ------------------------------------ |
 | `useCarrierSync`      | `src/hooks/useCarrierSync.ts` | Carrier portal sync queries/mutations |
+| `useCommissions`      | `src/hooks/useCommissions.ts` | Commission CRUD and reconciliation   |
 | `useConversations`    | `src/hooks/useConversations.ts` | Conversation CRUD and timeline       |
+| `useEnrollments`      | `src/hooks/useEnrollments.ts` | Enrollment CRUD                      |
 | `useZoom`             | `src/hooks/useZoom.ts`        | Webview zoom control                 |
 | `useKeyboardShortcuts`| `src/hooks/useKeyboardShortcuts.ts` | Global keyboard shortcuts       |
 
@@ -137,12 +138,13 @@ Registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![]`. Organized
 | -------------------------- | ---------------------------------------------------- |
 | `auth_commands`            | check_first_run, create_account, login, logout       |
 | `client_commands`          | get_clients, get_client, create/update/delete_client, hard_delete_client, merge_clients, check_client_duplicates, find_duplicate_clients, delete_all_clients |
-| `enrollment_commands`      | get_enrollments, create/update_enrollment             |
+| `enrollment_commands`      | get_enrollments, get_enrollment, create/update/delete_enrollment |
 | `conversation_commands`    | get_conversations, get/create/update_conversation, get/create/update_conversation_entry, get_client_timeline, get_pending_follow_ups, create_system_event |
 | `carrier_commands`         | get_carriers                                          |
 | `carrier_sync_commands`    | open_carrier_login, trigger_carrier_fetch, process_portal_members, get_carrier_login_url, get_carrier_sync_info, import_portal_members, confirm_disenrollments, get_sync_logs, update_carrier_expected_active, save/get/delete_portal_credentials, get_carriers_with_credentials |
 | `import_commands`          | parse_import_file, validate_import, preview_import, execute_import, import_call_log, import_integrity, import_sirem, enrich_leadsmaster |
-| `report_commands`          | get_report, export_report_pdf, get_dashboard_stats   |
+| `commission_commands`      | get/create/update/delete_commission_rate, get_commission_entries, update/delete_commission_entry, delete_commission_batch, parse/import_commission_statement, import_commission_csv, trigger_commission_fetch, reconcile_commissions, find_missing_commissions, get_reconciliation_entries, get_commission_summary, get/create/update/delete_commission_deposit |
+| `report_commands`          | get_dashboard_stats                                   |
 | `settings_commands`        | get/update_settings, get/save_agent_profile, backup_database, get_database_info |
 
 ### Error Handling
@@ -176,7 +178,8 @@ Defined in `src-tauri/src/models/`:
 | `Conversation`    | `conversation.rs`  |
 | `Plan`            | `plan.rs`          |
 | `Provider`        | `provider.rs`      |
-| Report types      | `report.rs`        |
+| `Commission`      | `commission.rs`    |
+| Dashboard types   | `report.rs`        |
 
 ## Database
 
@@ -205,6 +208,9 @@ Current migrations:
 | `v004_caresource_enrollments.sql` | Seed CareSource enrollments for existing clients |
 | `v005_expected_active.sql`      | `expected_active` column on carriers              |
 | `v006_member_details.sql`       | `member_record_locator` on clients, `client_providers` table |
+| `v007_commissions.sql`          | Commission tables (rates, entries, deposits)          |
+| `v008_deposits_allow_multiple.sql` | Remove unique constraint on deposits (allow multiple per carrier/month) |
+| `v009_raw_data.sql`             | Add `raw_data` column to `commission_entries`         |
 
 ### Schema
 
@@ -224,6 +230,9 @@ Core tables + FTS virtual table:
 | `conversation_entries`    | Individual entries within conversations  |
 | `carrier_sync_logs`       | Carrier portal sync history              |
 | `client_providers`        | Client PCP/provider records              |
+| `commission_rates`        | Expected commission rates by carrier/plan/year |
+| `commission_entries`      | Commission line items from statements    |
+| `commission_deposits`     | Bank deposits from carriers              |
 | `import_logs`             | Import history                           |
 | `agent_profile`           | Agent info and NPN                       |
 | `agent_carrier_numbers`   | Agent writing numbers                    |
@@ -249,7 +258,7 @@ Populated on first run via `src-tauri/src/db/seed.rs`:
 
 | Data                | Count | Examples                                    |
 | ------------------- | ----- | ------------------------------------------- |
-| Carriers            | 14    | UHC, Humana, Aetna, BCBS, Cigna...          |
+| Carriers            | 18    | UHC, Humana, Aetna, Anthem, BCBS, Cigna, CareSource, Zing, MedMutual, SummaCare... |
 | Plan types          | 21    | MA, MAPD, PDP, DSNP, Medigap A-N           |
 | States/territories  | 53    | 50 states + DC, PR, USVI                    |
 | Enrollment statuses | 10    | Active, Pending, Disenrolled (5 reasons)... |
@@ -396,37 +405,38 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 ## File Inventory
 
-### Rust (57 `.rs` files + 6 `.sql`)
+### Rust (63 `.rs` files + 9 `.sql`)
 
 | Layer          | Files                                                                 |
 | -------------- | --------------------------------------------------------------------- |
-| Commands       | auth, client, carrier, carrier_sync, conversation, enrollment, import, report, settings + mod |
-| Services       | auth, carrier_sync, client, conversation, dashboard, enrollment, matching, provider, report + mod |
+| Commands       | auth, client, carrier, carrier_sync, commission, conversation, enrollment, import, report, settings + mod |
+| Services       | auth, carrier_sync, client, commission, conversation, dashboard, enrollment, matching, provider + mod |
 | Services/Import| call_log, file_import, integrity, leadsmaster, shared, sirem + mod    |
-| Repositories   | carrier, client, conversation, enrollment, provider, report + mod     |
-| Models         | carrier, carrier_sync, client, conversation, enrollment, plan, provider, report + mod |
-| Carrier Sync   | devoted, caresource, medmutual, uhc, humana, anthem + mod            |
+| Services/Commission Importers | generic, humana + mod                                  |
+| Repositories   | carrier, client, commission, conversation, enrollment, provider, report + mod |
+| Models         | carrier, carrier_sync, client, commission, conversation, enrollment, plan, provider, report + mod |
+| Carrier Sync   | anthem, caresource, devoted, humana, medmutual, uhc + mod            |
 | DB             | connection, migrations, seed + mod                                    |
 | Other          | lib.rs, main.rs, error.rs                                             |
-| SQL            | v001_initial, v002_conversations, v003_carrier_sync, v004_caresource_enrollments, v005_expected_active, v006_member_details |
+| SQL            | v001_initial, v002_conversations, v003_carrier_sync, v004_caresource_enrollments, v005_expected_active, v006_member_details, v007_commissions, v008_deposits_allow_multiple, v009_raw_data |
 
-### Frontend (69 `.ts`/`.tsx` files)
+### Frontend (82 `.ts`/`.tsx` files)
 
 | Area           | Files                                                                |
 | -------------- | -------------------------------------------------------------------- |
 | App            | App.tsx, router.tsx, providers.tsx, main.tsx                          |
-| Layout         | AppLayout.tsx, CommandPalette.tsx, index.ts                          |
+| Layout         | AppLayout.tsx, CommandPalette.tsx, FindInPage.tsx, index.ts           |
 | UI             | badge, button, card, checkbox, dialog, dropdown-menu, input, label, scroll-area, select, separator, tabs, textarea, tooltip |
 | Auth           | LoginPage.tsx, index.ts                                              |
 | Carrier Sync   | CarrierSyncPage, CarrierTable, CredentialsDialog, DisenrollmentSection, NewInPortalSection, SyncResultsPanel, utils, index.ts |
 | Clients        | ClientsPage, ClientDetailPage, ClientFormPage, DuplicateScanPage, index.ts |
+| Commissions    | CommissionsPage, RatesTab, StatementImportTab, ReconciliationTab, CarrierSummaryTab, DepositsTab, ActivityLog, components/(RateFormDialog, DepositFormDialog, StatusBadge, EntryEditDialog, RawDataDialog), index.ts |
 | Dashboard      | DashboardPage.tsx, index.ts                                          |
 | Engagement     | ClientEngagementSection, ConversationDetail, ConversationList, EntryFormDialog, FollowUpBadge, NewConversationDialog, TimelineCard, index.ts |
-| Enrollments    | EnrollmentsPage.tsx, index.ts                                        |
+| Enrollments    | EnrollmentFormDialog.tsx, index.ts                                   |
 | Import         | ImportPage.tsx, index.ts                                             |
-| Reports        | ReportsPage.tsx, index.ts                                            |
 | Settings       | SettingsPage.tsx, index.ts                                           |
-| Hooks          | useClients, useConversations, useCarrierSync, useEnrollments, useKeyboardShortcuts, useZoom, index.ts |
+| Hooks          | useClients, useCommissions, useConversations, useCarrierSync, useEnrollments, useKeyboardShortcuts, useZoom, index.ts |
 | Stores         | authStore.ts, appStore.ts, themeStore.ts                             |
 | Lib            | tauri.ts, utils.ts                                                   |
 | Types          | index.ts                                                             |

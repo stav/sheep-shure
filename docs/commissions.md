@@ -92,6 +92,7 @@ Individual commission line items, either imported from statements or generated d
 | `rate_difference` | REAL    | `statement_amount - expected_rate`                   |
 | `status`          | TEXT    | OK, UNDERPAID, OVERPAID, MISSING, ZERO_RATE, UNMATCHED, PENDING |
 | `import_batch_id` | TEXT    | Groups entries from the same import for undo         |
+| `raw_data`        | TEXT    | Original statement row data (JSON, added in v009)    |
 | `notes`           | TEXT    | Optional                                             |
 | `created_at`      | TEXT    | Auto-set                                             |
 | `updated_at`      | TEXT    | Auto-updated via trigger                             |
@@ -116,7 +117,7 @@ Bank deposits received from carriers.
 | `created_at`    | TEXT    | Auto-set                             |
 | `updated_at`    | TEXT    | Auto-updated via trigger             |
 
-**Unique constraint**: `(carrier_id, deposit_month)`
+Multiple deposits per carrier per month are allowed (unique constraint removed in v008).
 
 ---
 
@@ -220,6 +221,8 @@ The import system recognizes common column header aliases:
 | Command                   | Parameters                | Returns                        |
 |---------------------------|---------------------------|--------------------------------|
 | `get_commission_entries`  | `filters: CommissionFilters` | `Vec<CommissionEntryListItem>`|
+| `update_commission_entry` | `id`, `input: UpdateCommissionEntryInput` | `()`              |
+| `delete_commission_entry` | `id`                      | `()`                           |
 | `delete_commission_batch` | `batch_id`                | `usize` (count deleted)        |
 
 ### Reconciliation
@@ -237,6 +240,8 @@ The import system recognizes common column header aliases:
 |-------------------------------|-----------------------------------------------------------------|-------------------------|
 | `parse_commission_statement`  | `file_path`                                                     | `ParsedFile` (headers + sample rows) |
 | `import_commission_statement` | `file_path`, `carrier_id`, `commission_month`, `column_mapping` | `StatementImportResult` |
+| `import_commission_csv`       | `csv_content`, `carrier_id`, `commission_month`                | `StatementImportResult` |
+| `trigger_commission_fetch`    | `carrier_id`                                                    | `()`                    |
 
 ### Deposits
 
@@ -335,6 +340,9 @@ All imported entries start with `PENDING` (matched) or `UNMATCHED` status.
 | `src-tauri/src/models/commission.rs` | Data structs (Rate, Entry, Deposit, Summary, etc.) |
 | `src-tauri/src/repositories/commission_repo.rs` | SQL queries and data access |
 | `src-tauri/src/services/commission_service.rs` | Business logic (import, reconcile, matching) |
+| `src-tauri/src/services/commission_importers/mod.rs` | Carrier-specific importer dispatch |
+| `src-tauri/src/services/commission_importers/generic.rs` | CSV/XLSX import with auto-column-mapping |
+| `src-tauri/src/services/commission_importers/humana.rs` | Pipe-delimited `.txt` Humana format |
 | `src-tauri/src/commands/commission_commands.rs` | Tauri command handlers (RPC endpoints) |
 
 ### Frontend (React + TypeScript)
@@ -350,5 +358,8 @@ All imported entries start with `PENDING` (matched) or `UNMATCHED` status.
 | `src/features/commissions/components/RateFormDialog.tsx` | Rate add/edit form |
 | `src/features/commissions/components/DepositFormDialog.tsx` | Deposit add/edit form |
 | `src/features/commissions/components/StatusBadge.tsx` | Color-coded status badge |
+| `src/features/commissions/components/EntryEditDialog.tsx` | Edit individual commission entries |
+| `src/features/commissions/components/RawDataDialog.tsx` | View raw statement row data |
+| `src/features/commissions/ActivityLog.tsx` | Import activity/history log |
 | `src/hooks/useCommissions.ts` | React Query hooks for all commission operations |
 | `src/types/index.ts` | TypeScript type definitions (lines ~370-519) |
