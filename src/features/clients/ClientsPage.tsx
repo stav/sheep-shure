@@ -14,6 +14,7 @@ import {
 import { useClients } from "@/hooks/useClients";
 import { tauriInvoke } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -263,11 +264,10 @@ export function ClientsPage() {
           </div>
         ) : (
           <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-            <input
-              type="checkbox"
+            <Checkbox
+              id="show-inactive"
               checked={showInactive}
-              onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
-              className="rounded border-input"
+              onCheckedChange={(checked) => { setShowInactive(!!checked); setPage(1); }}
             />
             Show inactive
           </label>
@@ -284,14 +284,9 @@ export function ClientsPage() {
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b bg-muted/50">
                 <th className="h-10 w-10 px-3">
-                  <input
-                    type="checkbox"
-                    checked={table.getIsAllPageRowsSelected()}
-                    ref={(el) => {
-                      if (el) el.indeterminate = table.getIsSomePageRowsSelected();
-                    }}
-                    onChange={table.getToggleAllPageRowsSelectedHandler()}
-                    className="rounded border-input"
+                  <Checkbox
+                    checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+                    onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
                   />
                 </th>
                 {headerGroup.headers.map((header) => (
@@ -335,12 +330,10 @@ export function ClientsPage() {
                   onClick={() => navigate(`/clients/${row.original.id}`)}
                 >
                   <td className="w-10 px-3 py-3">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={row.getIsSelected()}
                       onClick={(e) => handleRowCheckbox(rowIndex, row.id, e)}
-                      onChange={() => {}} // controlled — actual logic in onClick for shift-click support
-                      className="rounded border-input"
+                      onCheckedChange={() => {}} // controlled — actual logic in onClick for shift-click support
                     />
                   </td>
                   {row.getVisibleCells().map((cell) => (
