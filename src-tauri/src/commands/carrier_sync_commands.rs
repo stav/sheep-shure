@@ -113,6 +113,7 @@ pub async fn open_carrier_login(
     let pending_month = std::sync::Arc::new(std::sync::Mutex::new(Option::<String>::None));
     let nav_month = pending_month.clone();
     let dl_month = pending_month.clone();
+    let dl_counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     WebviewWindowBuilder::new(&app, "carrier-login", WebviewUrl::External(url.parse().unwrap()))
         .title(format!("{} Login", portal.carrier_name()))
@@ -185,7 +186,8 @@ pub async fn open_carrier_login(
             use tauri::webview::DownloadEvent;
             match event {
                 DownloadEvent::Requested { url, destination } => {
-                    let fname = format!("compass-dl-{}.csv", std::process::id());
+                    let seq = dl_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let fname = format!("compass-dl-{}-{}.csv", std::process::id(), seq);
                     let tmp = std::env::temp_dir().join(fname);
                     let pending = dl_month.lock().unwrap().clone();
                     tracing::info!("[download] REQUESTED: url={}", url);
