@@ -140,34 +140,32 @@ export function AppLayout() {
           {/* Navigation */}
           <nav className="flex flex-1 flex-col gap-1 p-2">
             {visibleNavItems.map((item) => {
-              const link = (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn(
-                      "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )
-                  }
-                >
-                  <span className={cn("flex items-center gap-3", sidebarCollapsed && "justify-center")}>
+              const isActive = location.pathname.startsWith(item.to);
+              const linkClass = cn(
+                "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
+                isActive
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              );
+              return sidebarCollapsed ? (
+                <Tooltip key={item.to}>
+                  <TooltipTrigger asChild>
+                    <NavLink to={item.to} className={linkClass}>
+                      <span className="flex items-center justify-center">
+                        <item.icon className="h-5 w-5 shrink-0" />
+                      </span>
+                    </NavLink>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <NavLink key={item.to} to={item.to} className={linkClass}>
+                  <span className="flex items-center gap-3">
                     <item.icon className="h-5 w-5 shrink-0" />
-                    {!sidebarCollapsed && <span>{item.label}</span>}
+                    <span>{item.label}</span>
                   </span>
                 </NavLink>
               );
-              if (sidebarCollapsed) {
-                return (
-                  <Tooltip key={item.to}>
-                    <TooltipTrigger asChild>{link}</TooltipTrigger>
-                    <TooltipContent side="right">{item.label}</TooltipContent>
-                  </Tooltip>
-                );
-              }
-              return link;
             })}
           </nav>
 
@@ -175,45 +173,34 @@ export function AppLayout() {
 
           {/* Settings link at bottom */}
           <div className="flex flex-col gap-1 p-2">
-            {sidebarCollapsed ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <NavLink
-                    to="/settings"
-                    className={({ isActive }) =>
-                      cn(
-                        "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
-                        isActive
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      )
-                    }
-                  >
-                    <span className="flex items-center justify-center">
-                      <Settings className="h-5 w-5 shrink-0" />
-                    </span>
-                  </NavLink>
-                </TooltipTrigger>
-                <TooltipContent side="right">Settings</TooltipContent>
-              </Tooltip>
-            ) : (
-              <NavLink
-                to="/settings"
-                className={({ isActive }) =>
-                  cn(
-                    "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  )
-                }
-              >
-                <span className="flex items-center gap-3">
-                  <Settings className="h-5 w-5 shrink-0" />
-                  <span>Settings</span>
-                </span>
-              </NavLink>
-            )}
+            {(() => {
+              const settingsActive = location.pathname.startsWith("/settings");
+              const settingsClass = cn(
+                "block rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors",
+                settingsActive
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              );
+              return sidebarCollapsed ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <NavLink to="/settings" className={settingsClass}>
+                      <span className="flex items-center justify-center">
+                        <Settings className="h-5 w-5 shrink-0" />
+                      </span>
+                    </NavLink>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">Settings</TooltipContent>
+                </Tooltip>
+              ) : (
+                <NavLink to="/settings" className={settingsClass}>
+                  <span className="flex items-center gap-3">
+                    <Settings className="h-5 w-5 shrink-0" />
+                    <span>Settings</span>
+                  </span>
+                </NavLink>
+              );
+            })()}
 
             {sidebarCollapsed ? (
               <Tooltip>
