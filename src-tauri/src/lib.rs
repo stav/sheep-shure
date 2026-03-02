@@ -79,8 +79,6 @@ pub fn run() {
             commands::import_sirem,
             commands::enrich_leadsmaster,
             commands::get_dashboard_stats,
-            commands::get_report,
-            commands::export_report_pdf,
             commands::get_settings,
             commands::update_settings,
             commands::get_agent_profile,

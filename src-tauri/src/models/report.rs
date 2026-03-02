@@ -1,17 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use super::client::ClientFilters;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReportDefinition {
-    pub name: String,
-    pub filters: ClientFilters,
-    pub columns: Vec<String>,
-    pub sort_by: Option<String>,
-    pub sort_dir: Option<String>,
-    pub group_by: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
     pub total_active_clients: i64,

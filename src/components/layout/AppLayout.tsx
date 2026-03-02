@@ -6,7 +6,6 @@ import {
   Users,
 
   Upload,
-  BarChart3,
   RefreshCw,
   DollarSign,
   Settings,
@@ -42,7 +41,6 @@ const navItems = [
   { to: "/clients", label: "Clients", icon: Users },
 
   { to: "/import", label: "Import", icon: Upload },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/carrier-sync", label: "Carrier Sync", icon: RefreshCw },
   { to: "/commissions", label: "Commissions", icon: DollarSign },
 ];
@@ -53,7 +51,6 @@ const pageTitles: Record<string, string> = {
   "/clients/new": "New Client",
 
   "/import": "Import",
-  "/reports": "Reports",
   "/carrier-sync": "Carrier Sync",
   "/commissions": "Commissions",
   "/settings": "Settings",
