@@ -26,14 +26,14 @@ pub fn get_dashboard_stats(conn: &Connection) -> Result<DashboardStats, AppError
 
     // Pending enrollments
     let pending: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM enrollments WHERE status_code = 'PENDING' AND is_active = 1",
+        "SELECT COUNT(*) FROM enrollments WHERE status_code = 'PENDING'",
         [],
         |row| row.get(0),
     )?;
 
     // By plan type
     let by_plan_type = query_pairs(conn,
-        "SELECT COALESCE(e.plan_type_code, 'Unknown'), COUNT(DISTINCT e.client_id) FROM enrollments e WHERE e.status_code = 'ACTIVE' AND e.is_active = 1 GROUP BY e.plan_type_code ORDER BY COUNT(DISTINCT e.client_id) DESC"
+        "SELECT COALESCE(e.plan_type_code, 'Unknown'), COUNT(DISTINCT e.client_id) FROM enrollments e WHERE e.status_code = 'ACTIVE' GROUP BY e.plan_type_code ORDER BY COUNT(DISTINCT e.client_id) DESC"
     )?;
 
     // By carrier (name, actual active count, expected active count)
@@ -82,7 +82,7 @@ fn query_carrier_breakdown(conn: &Connection) -> Result<Vec<(String, i64, i64)>,
                COUNT(DISTINCT cl.id), \
                COALESCE(c.expected_active, 0) \
                FROM clients cl \
-               LEFT JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' AND e.is_active = 1 \
+               LEFT JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' \
                LEFT JOIN carriers c ON e.carrier_id = c.id \
                WHERE cl.is_active = 1 \
                GROUP BY COALESCE(c.short_name, c.name, 'No Carrier') \
@@ -103,7 +103,7 @@ fn query_carrier_plans(conn: &Connection) -> Result<Vec<(String, String, i64)>, 
                COALESCE(e.plan_name, 'Unknown'), \
                COUNT(DISTINCT cl.id) \
                FROM clients cl \
-               JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' AND e.is_active = 1 \
+               JOIN enrollments e ON e.client_id = cl.id AND e.status_code = 'ACTIVE' \
                LEFT JOIN carriers c ON e.carrier_id = c.id \
                WHERE cl.is_active = 1 \
                GROUP BY COALESCE(c.short_name, c.name, 'No Carrier'), COALESCE(e.plan_name, 'Unknown') \

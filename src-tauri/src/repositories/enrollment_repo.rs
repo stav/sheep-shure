@@ -11,7 +11,7 @@ pub fn get_enrollments(conn: &Connection, client_id: Option<&str>) -> Result<Vec
              LEFT JOIN clients c ON e.client_id = c.id
              LEFT JOIN carriers cr ON e.carrier_id = cr.id
              LEFT JOIN enrollment_statuses es ON e.status_code = es.code
-             WHERE e.client_id = ?1 AND e.is_active = 1
+             WHERE e.client_id = ?1
              ORDER BY e.effective_date DESC".to_string(),
             vec![Box::new(cid.to_string()) as Box<dyn rusqlite::types::ToSql>],
         )
@@ -22,7 +22,6 @@ pub fn get_enrollments(conn: &Connection, client_id: Option<&str>) -> Result<Vec
              LEFT JOIN clients c ON e.client_id = c.id
              LEFT JOIN carriers cr ON e.carrier_id = cr.id
              LEFT JOIN enrollment_statuses es ON e.status_code = es.code
-             WHERE e.is_active = 1
              ORDER BY e.effective_date DESC".to_string(),
             vec![],
         )
@@ -52,7 +51,7 @@ pub fn get_enrollment(conn: &Connection, id: &str) -> Result<Enrollment, AppErro
     let sql = "SELECT id, client_id, plan_id, carrier_id, plan_type_code, plan_name, contract_number,
                pbp_number, effective_date, termination_date, application_date, status_code,
                enrollment_period, disenrollment_reason, premium, confirmation_number, enrollment_source,
-               is_active, created_at, updated_at
+               created_at, updated_at
                FROM enrollments WHERE id = ?1";
 
     conn.query_row(sql, params![id], |row| {
@@ -74,9 +73,8 @@ pub fn get_enrollment(conn: &Connection, id: &str) -> Result<Enrollment, AppErro
             premium: row.get(14)?,
             confirmation_number: row.get(15)?,
             enrollment_source: row.get(16)?,
-            is_active: row.get(17)?,
-            created_at: row.get(18)?,
-            updated_at: row.get(19)?,
+            created_at: row.get(17)?,
+            updated_at: row.get(18)?,
         })
     })
     .map_err(|e| match e {
@@ -87,10 +85,7 @@ pub fn get_enrollment(conn: &Connection, id: &str) -> Result<Enrollment, AppErro
 
 /// Check if client already has an active/pending enrollment in the same plan category
 pub fn has_active_enrollment_in_category(conn: &Connection, client_id: &str, plan_type_code: &str, exclude_id: Option<&str>) -> Result<bool, AppError> {
-    // Determine the category from plan_type_code
     let category = get_plan_category(plan_type_code);
-
-    // Get all plan_type_codes in the same category
     let category_codes = get_codes_for_category(&category);
 
     if category_codes.is_empty() {
@@ -100,13 +95,12 @@ pub fn has_active_enrollment_in_category(conn: &Connection, client_id: &str, pla
     let placeholders: Vec<String> = category_codes.iter().enumerate().map(|(i, _)| format!("?{}", i + 3)).collect();
 
     let mut sql = format!(
-        "SELECT COUNT(*) FROM enrollments WHERE client_id = ?1 AND status_code IN ('ACTIVE', 'PENDING') AND plan_type_code IN ({}) AND is_active = 1",
+        "SELECT COUNT(*) FROM enrollments WHERE client_id = ?1 AND status_code IN ('ACTIVE', 'PENDING') AND plan_type_code IN ({})",
         placeholders.join(", ")
     );
 
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     param_values.push(Box::new(client_id.to_string()));
-    // ?2 reserved for exclude_id
     if let Some(eid) = exclude_id {
         sql.push_str(" AND id != ?2");
         param_values.push(Box::new(eid.to_string()));
@@ -159,10 +153,9 @@ pub fn create_enrollment(conn: &Connection, id: &str, input: &CreateEnrollmentIn
     Ok(())
 }
 
-/// Soft delete an enrollment
+/// Hard delete an enrollment
 pub fn delete_enrollment(conn: &Connection, id: &str) -> Result<(), AppError> {
-    let sql = "UPDATE enrollments SET is_active = 0, updated_at = datetime('now') WHERE id = ?1";
-    let rows = conn.execute(sql, params![id])?;
+    let rows = conn.execute("DELETE FROM enrollments WHERE id = ?1", params![id])?;
     if rows == 0 {
         return Err(AppError::NotFound(format!("Enrollment {} not found", id)));
     }
@@ -178,14 +171,14 @@ pub fn update_enrollment(conn: &Connection, id: &str, input: &UpdateEnrollmentIn
                application_date = COALESCE(?10, application_date), status_code = COALESCE(?11, status_code),
                enrollment_period = COALESCE(?12, enrollment_period), disenrollment_reason = COALESCE(?13, disenrollment_reason),
                premium = COALESCE(?14, premium), confirmation_number = COALESCE(?15, confirmation_number),
-               enrollment_source = COALESCE(?16, enrollment_source), is_active = COALESCE(?17, is_active)
+               enrollment_source = COALESCE(?16, enrollment_source)
                WHERE id = ?1";
 
     let rows = conn.execute(sql, params![
         id, input.plan_id, input.carrier_id, input.plan_type_code, input.plan_name,
         input.contract_number, input.pbp_number, input.effective_date, input.termination_date,
         input.application_date, input.status_code, input.enrollment_period, input.disenrollment_reason,
-        input.premium, input.confirmation_number, input.enrollment_source, input.is_active
+        input.premium, input.confirmation_number, input.enrollment_source
     ])?;
 
     if rows == 0 {

@@ -387,7 +387,7 @@ pub fn import_sirem_from_dump(
         let eff_str = effective_date.as_deref();
         let already_exists: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM enrollments WHERE client_id = ?1 AND plan_name = ?2 AND effective_date = ?3 AND is_active = 1",
+                "SELECT COUNT(*) FROM enrollments WHERE client_id = ?1 AND plan_name = ?2 AND effective_date = ?3",
                 rusqlite::params![client_id, plan_name, eff_str],
                 |row| row.get::<_, i64>(0),
             )

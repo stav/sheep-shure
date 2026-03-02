@@ -104,7 +104,6 @@ fn get_local_enrollments(conn: &Connection, carrier_id: &str) -> Result<Vec<Loca
                JOIN clients c ON e.client_id = c.id
                WHERE e.carrier_id = ?1
                  AND e.status_code IN ('ACTIVE', 'PENDING')
-                 AND e.is_active = 1
                  AND c.is_active = 1";
 
     let mut stmt = conn.prepare(sql)?;
@@ -364,7 +363,6 @@ pub fn import_portal_members(
                 "SELECT id FROM enrollments
                  WHERE client_id = ?1 AND carrier_id = ?2
                    AND plan_name = ?3 AND effective_date = ?4
-                   AND is_active = 1
                  ORDER BY created_at DESC LIMIT 1",
                 params![client_id, carrier_id, member.plan_name, eff],
                 |row| row.get(0),

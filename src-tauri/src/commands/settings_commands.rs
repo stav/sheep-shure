@@ -37,7 +37,7 @@ pub fn get_database_info(
 
             let enrollment_count: i64 = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM enrollments WHERE is_active = 1",
+                    "SELECT COUNT(*) FROM enrollments",
                     [],
                     |row| row.get(0),
                 )

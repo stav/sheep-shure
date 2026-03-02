@@ -19,7 +19,6 @@ pub struct Enrollment {
     pub premium: Option<f64>,
     pub confirmation_number: Option<String>,
     pub enrollment_source: Option<String>,
-    pub is_active: Option<bool>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
 }
@@ -61,7 +60,6 @@ pub struct UpdateEnrollmentInput {
     pub premium: Option<f64>,
     pub confirmation_number: Option<String>,
     pub enrollment_source: Option<String>,
-    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

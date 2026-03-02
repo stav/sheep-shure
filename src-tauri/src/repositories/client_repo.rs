@@ -53,7 +53,7 @@ pub fn get_clients(
     if let Some(ref carrier_id) = filters.carrier_id {
         let idx = param_values.len() + 1;
         conditions.push(format!(
-            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE carrier_id = ?{} AND is_active = 1)",
+            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE carrier_id = ?{})",
             idx
         ));
         param_values.push(Box::new(carrier_id.clone()));
@@ -63,7 +63,7 @@ pub fn get_clients(
     if let Some(ref plan_type_code) = filters.plan_type_code {
         let idx = param_values.len() + 1;
         conditions.push(format!(
-            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE plan_type_code = ?{} AND is_active = 1)",
+            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE plan_type_code = ?{})",
             idx
         ));
         param_values.push(Box::new(plan_type_code.clone()));
@@ -73,7 +73,7 @@ pub fn get_clients(
     if let Some(ref status_code) = filters.status_code {
         let idx = param_values.len() + 1;
         conditions.push(format!(
-            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE status_code = ?{} AND is_active = 1)",
+            "c.id IN (SELECT DISTINCT client_id FROM enrollments WHERE status_code = ?{})",
             idx
         ));
         param_values.push(Box::new(status_code.clone()));

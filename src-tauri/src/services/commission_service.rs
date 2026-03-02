@@ -228,7 +228,7 @@ pub fn find_missing_clients(
     let sql = "SELECT e.client_id, e.id, e.plan_type_code, c.first_name || ' ' || c.last_name
                FROM enrollments e
                JOIN clients c ON e.client_id = c.id
-               WHERE e.carrier_id = ?1 AND e.is_active = 1 AND e.status_code = 'ACTIVE'
+               WHERE e.carrier_id = ?1 AND e.status_code IN ('ACTIVE', 'PENDING') AND e.status_code = 'ACTIVE'
                AND NOT EXISTS (
                    SELECT 1 FROM commission_entries ce
                    WHERE ce.client_id = e.client_id AND ce.carrier_id = ?1 AND ce.commission_month = ?2
@@ -544,7 +544,7 @@ fn match_statement_member(
                 if let Ok((cid, eid, ptc)) = conn.query_row(
                     "SELECT c.id, e.id, e.plan_type_code
                      FROM clients c
-                     LEFT JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?2 AND e.is_active = 1
+                     LEFT JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?2 AND e.status_code IN ('ACTIVE', 'PENDING')
                      WHERE c.mbi = ?1 AND c.is_active = 1
                      LIMIT 1",
                     rusqlite::params![mid, carrier_id],
@@ -564,7 +564,7 @@ fn match_statement_member(
             if let Ok((cid, eid, ptc)) = conn.query_row(
                 "SELECT c.id, e.id, e.plan_type_code
                  FROM clients c
-                 JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?3 AND e.is_active = 1
+                 JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?3 AND e.status_code IN ('ACTIVE', 'PENDING')
                  WHERE LOWER(c.last_name) = LOWER(?2) AND LOWER(c.first_name) = LOWER(?1) AND c.is_active = 1
                  LIMIT 1",
                 rusqlite::params![first, last, carrier_id],
@@ -579,7 +579,7 @@ fn match_statement_member(
                 if let Ok((cid, eid, ptc)) = conn.query_row(
                     "SELECT c.id, e.id, e.plan_type_code
                      FROM clients c
-                     JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?3 AND e.is_active = 1
+                     JOIN enrollments e ON e.client_id = c.id AND e.carrier_id = ?3 AND e.status_code IN ('ACTIVE', 'PENDING')
                      WHERE LOWER(c.last_name) = LOWER(?2) AND LOWER(c.first_name) = LOWER(?1) AND c.is_active = 1
                      LIMIT 1",
                     rusqlite::params![first_base, last, carrier_id],
