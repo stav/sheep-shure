@@ -5,7 +5,6 @@ import { DashboardPage } from "@/features/dashboard";
 import { ClientsPage, ClientDetailPage, ClientFormPage, DuplicateScanPage } from "@/features/clients";
 
 import { ImportPage } from "@/features/import";
-import { ReportsPage } from "@/features/reports";
 import { SettingsPage } from "@/features/settings";
 import { CarrierSyncPage } from "@/features/carrier-sync";
 import { CommissionsPage } from "@/features/commissions";
@@ -34,7 +33,6 @@ export function AppRouter() {
             <Route path="/clients/duplicates" element={<DuplicateScanPage />} />
 
             <Route path="/import" element={<ImportPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
             <Route path="/carrier-sync" element={<CarrierSyncPage />} />
             <Route path="/commissions" element={<CommissionsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

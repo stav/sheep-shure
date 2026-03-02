@@ -13,4 +13,3 @@ pub mod import_service {
 mod import;
 pub mod matching;
 pub mod provider_service;
-pub mod report_service;
