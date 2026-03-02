@@ -326,20 +326,11 @@ pub fn import_portal_members(
         let status_code = {
             let s = member.status.as_deref().unwrap_or("").to_lowercase();
             let ps = member.policy_status.as_deref().unwrap_or("").to_lowercase();
-            // policy_status is the most granular signal — check it first
-            if !ps.is_empty() {
-                if ps.contains("inactive") {
-                    "CANCELLED"
-                } else if ps.contains("active") {
-                    // Covers "Active Policy" and "Future Active Policy"
-                    "ACTIVE"
-                } else {
-                    "PENDING"
-                }
-            // Fall back to generic status field
-            } else if s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
+
+            // Try policy_status first (most granular), then fall back to status
+            if ps.contains("inactive") || s.contains("cancel") || s.contains("inactive") || s == "not_enrolled" || s == "terminated" {
                 "CANCELLED"
-            } else if s.contains("active") || s == "enrolled" || s.trim().is_empty() {
+            } else if ps.contains("active") || s.contains("active") || s == "enrolled" || (ps.is_empty() && s.trim().is_empty()) {
                 "ACTIVE"
             } else {
                 "PENDING"
@@ -367,35 +358,58 @@ pub fn import_portal_members(
             }
         }
 
-        let enrollment_input = CreateEnrollmentInput {
-            client_id: client_id.clone(),
-            plan_id: None,
-            carrier_id: Some(carrier_id.to_string()),
-            plan_type_code: None,
-            plan_name: member.plan_name.clone(),
-            contract_number: None,
-            pbp_number: None,
-            effective_date: member.effective_date.clone(),
-            termination_date: member.end_date.clone(),
-            application_date: member.application_date.clone(),
-            status_code: Some(status_code.to_string()),
-            enrollment_period: None,
-            disenrollment_reason: None,
-            premium: None,
-            confirmation_number: None,
-            enrollment_source: Some("carrier_sync".to_string()),
-        };
+        // Check for existing enrollment with same effective_date + carrier + plan_name
+        let existing_enrollment_id: Option<String> = member.effective_date.as_ref().and_then(|eff| {
+            conn.query_row(
+                "SELECT id FROM enrollments
+                 WHERE client_id = ?1 AND carrier_id = ?2
+                   AND plan_name = ?3 AND effective_date = ?4
+                   AND is_active = 1
+                 ORDER BY created_at DESC LIMIT 1",
+                params![client_id, carrier_id, member.plan_name, eff],
+                |row| row.get(0),
+            ).ok()
+        });
 
-        match enrollment_service::create_enrollment(conn, &enrollment_input) {
-            Ok(_) => {
-                imported += 1;
-                imported_names.push(format!("{} {}", member.first_name, member.last_name));
-            }
-            Err(e) => {
-                errors.push(format!(
-                    "{} {}: enrollment failed — {}",
-                    member.first_name, member.last_name, e
-                ));
+        if let Some(eid) = existing_enrollment_id {
+            // Update existing enrollment instead of creating a duplicate
+            let _ = conn.execute(
+                "UPDATE enrollments SET status_code = ?1, termination_date = ?2, application_date = ?3, enrollment_source = 'carrier_sync', updated_at = datetime('now') WHERE id = ?4",
+                params![status_code, member.end_date, member.application_date, eid],
+            );
+            imported += 1;
+            imported_names.push(format!("{} {}", member.first_name, member.last_name));
+        } else {
+            let enrollment_input = CreateEnrollmentInput {
+                client_id: client_id.clone(),
+                plan_id: None,
+                carrier_id: Some(carrier_id.to_string()),
+                plan_type_code: None,
+                plan_name: member.plan_name.clone(),
+                contract_number: None,
+                pbp_number: None,
+                effective_date: member.effective_date.clone(),
+                termination_date: member.end_date.clone(),
+                application_date: member.application_date.clone(),
+                status_code: Some(status_code.to_string()),
+                enrollment_period: None,
+                disenrollment_reason: None,
+                premium: None,
+                confirmation_number: None,
+                enrollment_source: Some("carrier_sync".to_string()),
+            };
+
+            match enrollment_service::create_enrollment(conn, &enrollment_input) {
+                Ok(_) => {
+                    imported += 1;
+                    imported_names.push(format!("{} {}", member.first_name, member.last_name));
+                }
+                Err(e) => {
+                    errors.push(format!(
+                        "{} {}: enrollment failed — {}",
+                        member.first_name, member.last_name, e
+                    ));
+                }
             }
         }
 

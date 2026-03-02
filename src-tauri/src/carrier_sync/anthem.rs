@@ -232,7 +232,7 @@ const FETCH_SCRIPT: &str = r#"
                     effective_date: toIso(m.originalEffectiveDate || m.effectiveDate || null),
                     end_date: m.cancellationDate ? toIso(m.cancellationDate) : null,
                     status: status,
-                    policy_status: m.latestBillStatus || null,
+                    policy_status: null,
                     state: m.state || null,
                     city: null,
                     phone: null,
