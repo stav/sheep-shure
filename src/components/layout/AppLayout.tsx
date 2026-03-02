@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Users,
-  FileCheck,
+
   Upload,
   BarChart3,
   RefreshCw,
@@ -40,7 +40,7 @@ import { useZoom } from "@/hooks/useZoom";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/clients", label: "Clients", icon: Users },
-  { to: "/enrollments", label: "Enrollments", icon: FileCheck },
+
   { to: "/import", label: "Import", icon: Upload },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/carrier-sync", label: "Carrier Sync", icon: RefreshCw },
@@ -51,7 +51,7 @@ const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/clients": "Clients",
   "/clients/new": "New Client",
-  "/enrollments": "Enrollments",
+
   "/import": "Import",
   "/reports": "Reports",
   "/carrier-sync": "Carrier Sync",

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Command } from "cmdk";
 import {
-  LayoutDashboard, Users, FileCheck, Upload, BarChart3, Settings,
+  LayoutDashboard, Users, Upload, BarChart3, Settings,
   Plus, Search, UserPlus,
 } from "lucide-react";
 
@@ -66,12 +66,6 @@ export function CommandPalette() {
                 className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer text-sm hover:bg-accent aria-selected:bg-accent"
               >
                 <Users className="h-4 w-4" /> Clients
-              </Command.Item>
-              <Command.Item
-                onSelect={() => runAction("/enrollments")}
-                className="flex items-center gap-2 px-2 py-2 rounded-md cursor-pointer text-sm hover:bg-accent aria-selected:bg-accent"
-              >
-                <FileCheck className="h-4 w-4" /> Enrollments
               </Command.Item>
               <Command.Item
                 onSelect={() => runAction("/import")}
