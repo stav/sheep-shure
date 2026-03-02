@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAppStore } from "@/stores/appStore";
 import {
   useReactTable,
@@ -8,8 +9,10 @@ import {
   flexRender,
   createColumnHelper,
   type SortingState,
+  type RowSelectionState,
 } from "@tanstack/react-table";
 import { useClients } from "@/hooks/useClients";
+import { tauriInvoke } from "@/lib/tauri";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,18 +24,20 @@ import {
 } from "@/components/ui/select";
 import type { ClientListItem, ClientFilters } from "@/types";
 import { Plus, Search, X, ChevronLeft, ChevronRight, Loader2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { toast } from "sonner";
 
 const columnHelper = createColumnHelper<ClientListItem>();
 
 export function ClientsPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setPageSubtitle = useAppStore((s) => s.setPageSubtitle);
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Initialize state from URL search params
-  const initialSearch = searchParams.get("q") ?? "";
-  const initialPerPage = searchParams.get("perPage") ?? "25";
-  const initialPage = Number(searchParams.get("page") ?? "1") || 1;
+  // Read URL params directly (useSearchParams causes infinite re-renders in React Router v6)
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialSearch = urlParams.get("q") ?? "";
+  const initialPerPage = urlParams.get("perPage") ?? "25";
+  const initialPage = Number(urlParams.get("page") ?? "1") || 1;
 
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
@@ -40,25 +45,27 @@ export function ClientsPage() {
   const [perPageOption, setPerPageOption] = useState(initialPerPage);
   const [showInactive, setShowInactive] = useState(false);
 
-  // Sync state changes to URL (replace, not push)
+  // Bulk selection
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [bulkAction, setBulkAction] = useState<"deactivate" | "delete" | null>(null);
+  const [bulkPending, setBulkPending] = useState(false);
+  const lastClickedIndex = useRef<number | null>(null);
+
+  // Clear selection on page/filter/search changes
   useEffect(() => {
-    const params: Record<string, string> = {};
-    if (debouncedSearch) params.q = debouncedSearch;
-    if (perPageOption !== "25") params.perPage = perPageOption;
-    if (page > 1) params.page = String(page);
-    setSearchParams(params, { replace: true });
-  }, [debouncedSearch, perPageOption, page, setSearchParams]);
+    setRowSelection({});
+    lastClickedIndex.current = null;
+  }, [page, debouncedSearch, showInactive, perPageOption]);
 
   // Simple debounce
-  const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSearch = (value: string) => {
     setSearch(value);
-    if (timer) clearTimeout(timer);
-    const t = setTimeout(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
       setDebouncedSearch(value);
       setPage(1);
     }, 300);
-    setTimer(t);
   };
 
   const filters: ClientFilters = useMemo(() => ({
@@ -70,11 +77,16 @@ export function ClientsPage() {
   const perPage = perPageOption === "all" ? 9999 : Number(perPageOption);
   const { data, isLoading } = useClients(filters, page, perPage);
 
+  // Stable empty array to avoid TanStack Table getting a new [] reference each render
+  const emptyItems = useRef<ClientListItem[]>([]);
+  const tableData = data?.items ?? emptyItems.current;
+
   // Set page subtitle in nav header
+  const total = data?.total;
   useEffect(() => {
-    setPageSubtitle(data ? `${data.total} total clients` : null);
+    setPageSubtitle(total != null ? `${total} total clients` : null);
     return () => setPageSubtitle(null);
-  }, [data, setPageSubtitle]);
+  }, [total, setPageSubtitle]);
 
   const columns = useMemo(() => [
     columnHelper.accessor("first_name", {
@@ -109,19 +121,95 @@ export function ClientsPage() {
   ], []);
 
   const table = useReactTable({
-    data: data?.items ?? [],
+    data: tableData,
     columns,
-    state: { sorting },
+    state: { sorting, rowSelection },
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    enableRowSelection: true,
+    getRowId: (row) => row.id,
   });
 
   const totalPages = data ? Math.ceil(data.total / perPage) : 0;
+  const selectedIds = Object.keys(rowSelection).filter((id) => rowSelection[id]);
+  const selectedCount = selectedIds.length;
+
+  // Shift-click range selection
+  const handleRowCheckbox = useCallback(
+    (rowIndex: number, rowId: string, e: React.MouseEvent) => {
+      e.stopPropagation(); // prevent row navigation
+      const rows = table.getRowModel().rows;
+
+      if (e.shiftKey && lastClickedIndex.current != null) {
+        const start = Math.min(lastClickedIndex.current, rowIndex);
+        const end = Math.max(lastClickedIndex.current, rowIndex);
+        // Determine if we're selecting or deselecting based on the clicked row's current state
+        const willSelect = !rowSelection[rowId];
+        setRowSelection((prev) => {
+          const next = { ...prev };
+          for (let i = start; i <= end; i++) {
+            next[rows[i].id] = willSelect;
+          }
+          return next;
+        });
+      } else {
+        setRowSelection((prev) => ({
+          ...prev,
+          [rowId]: !prev[rowId],
+        }));
+      }
+      lastClickedIndex.current = rowIndex;
+    },
+    [table, rowSelection],
+  );
+
+  // Bulk actions
+  const handleBulkDeactivate = useCallback(async () => {
+    setBulkPending(true);
+    let count = 0;
+    for (const id of selectedIds) {
+      try {
+        await tauriInvoke("update_client", { id, input: { is_active: false } });
+        await tauriInvoke("create_system_event", {
+          clientId: id,
+          eventType: "CLIENT_DEACTIVATED",
+          eventData: null,
+        });
+        count++;
+      } catch (err) {
+        console.error(`Failed to deactivate ${id}:`, err);
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    setRowSelection({});
+    setBulkAction(null);
+    setBulkPending(false);
+    toast.success(`Deactivated ${count} client${count !== 1 ? "s" : ""}`);
+  }, [selectedIds, queryClient]);
+
+  const handleBulkDelete = useCallback(async () => {
+    setBulkPending(true);
+    let count = 0;
+    for (const id of selectedIds) {
+      try {
+        await tauriInvoke("hard_delete_client", { id });
+        count++;
+      } catch (err) {
+        console.error(`Failed to delete ${id}:`, err);
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["clients"] });
+    setRowSelection({});
+    setBulkAction(null);
+    setBulkPending(false);
+    toast.success(`Deleted ${count} client${count !== 1 ? "s" : ""}`);
+  }, [selectedIds, queryClient]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -139,16 +227,52 @@ export function ClientsPage() {
             </button>
           )}
         </div>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
-            className="rounded border-input"
-          />
-          Show inactive
-        </label>
-        <Button onClick={() => navigate("/clients/new")}>
+        {selectedCount > 0 ? (
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-muted-foreground font-medium">{selectedCount} selected</span>
+            {bulkAction === "deactivate" ? (
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => setBulkAction(null)} disabled={bulkPending}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleBulkDeactivate} disabled={bulkPending}>
+                  {bulkPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  Confirm Deactivate
+                </Button>
+              </div>
+            ) : bulkAction === "delete" ? (
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => setBulkAction(null)} disabled={bulkPending}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" size="sm" onClick={handleBulkDelete} disabled={bulkPending}>
+                  {bulkPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  Confirm Delete
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => setBulkAction("deactivate")}>
+                  Deactivate
+                </Button>
+                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700" onClick={() => setBulkAction("delete")}>
+                  Delete
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => { setShowInactive(e.target.checked); setPage(1); }}
+              className="rounded border-input"
+            />
+            Show inactive
+          </label>
+        )}
+        <Button onClick={() => navigate("/clients/new")} className="ml-auto">
           <Plus className="mr-2 h-4 w-4" />
           New Client
         </Button>
@@ -159,6 +283,17 @@ export function ClientsPage() {
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-b bg-muted/50">
+                <th className="h-10 w-10 px-3">
+                  <input
+                    type="checkbox"
+                    checked={table.getIsAllPageRowsSelected()}
+                    ref={(el) => {
+                      if (el) el.indeterminate = table.getIsSomePageRowsSelected();
+                    }}
+                    onChange={table.getToggleAllPageRowsSelectedHandler()}
+                    className="rounded border-input"
+                  />
+                </th>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -179,26 +314,35 @@ export function ClientsPage() {
               </tr>
             ))}
           </thead>
-          <tbody>
+          <tbody className="select-none">
             {isLoading ? (
               <tr>
-                <td colSpan={columns.length} className="h-32 text-center">
+                <td colSpan={columns.length + 1} className="h-32 text-center">
                   <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
                 </td>
               </tr>
             ) : table.getRowModel().rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="h-32 text-center text-muted-foreground">
+                <td colSpan={columns.length + 1} className="h-32 text-center text-muted-foreground">
                   No clients found.
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
+              table.getRowModel().rows.map((row, rowIndex) => (
                 <tr
                   key={row.id}
-                  className={`border-b cursor-pointer hover:bg-muted/50 transition-colors ${!row.original.is_active ? "opacity-50 border-l-2 border-l-red-400" : ""}`}
+                  className={`border-b cursor-pointer hover:bg-muted/50 transition-colors ${!row.original.is_active ? "opacity-50 border-l-2 border-l-red-400" : ""} ${row.getIsSelected() ? "bg-muted/30" : ""}`}
                   onClick={() => navigate(`/clients/${row.original.id}`)}
                 >
+                  <td className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={row.getIsSelected()}
+                      onClick={(e) => handleRowCheckbox(rowIndex, row.id, e)}
+                      onChange={() => {}} // controlled — actual logic in onClick for shift-click support
+                      className="rounded border-input"
+                    />
+                  </td>
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

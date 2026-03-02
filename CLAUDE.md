@@ -25,6 +25,12 @@ When asked for "commit messages" look in the working tree changes as well as the
 3. one sentence,
 4. full (long) message.
 
+## React Router v6 — Do Not Use `useSearchParams`
+
+**Never use `useSearchParams` from React Router v6.** It causes infinite re-render loops because `setSearchParams` returns a new function reference whenever `searchParams` changes, which means any `useEffect` that includes `setSearchParams` in its deps will loop forever. Even `window.history.replaceState` is unsafe because React Router monkey-patches it and triggers internal navigation listeners.
+
+Instead, read URL params directly with `new URLSearchParams(window.location.search)` on mount, and manage state internally with `useState`. If URL sync is needed, use `navigate` with `{ replace: true }` behind a debounce or explicit user action — never in a reactive effect.
+
 ## Obsidian
 
 The global user Obsidian vault we use is located at ~/Obsidian.
