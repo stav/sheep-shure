@@ -114,6 +114,7 @@ pub async fn open_carrier_login(
     let nav_month = pending_month.clone();
     let dl_month = pending_month.clone();
     let dl_counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let nav_file_counter = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
 
     WebviewWindowBuilder::new(&app, "carrier-login", WebviewUrl::External(url.parse().unwrap()))
         .title(format!("{} Login", portal.carrier_name()))
@@ -141,6 +142,59 @@ pub async fn open_carrier_login(
                             tracing::info!("Commission month detected from page: {}", month_str);
                             emit_log(&nav_handle, "info", "portal", &format!("Detected statement month: {}", month_str), None);
                             *nav_month.lock().unwrap() = Some(month_str);
+                        }
+                    }
+                } else if path == "/commission-file" {
+                    // Receive base64-encoded spreadsheet file from JS fetch
+                    let month = nav_url.query_pairs()
+                        .find(|(k, _)| k == "month")
+                        .map(|(_, v)| v.to_string())
+                        .unwrap_or_default();
+                    if let Some(data_val) = nav_url.query_pairs().find(|(k, _)| k == "data") {
+                        let b64 = data_val.1.to_string();
+                        tracing::info!("[navigation] commission-file: month={}, base64 len={}", month, b64.len());
+                        use base64::Engine;
+                        match base64::engine::general_purpose::STANDARD.decode(&b64) {
+                            Ok(bytes) => {
+                                // Detect file type from magic bytes
+                                let ext = if bytes.starts_with(&[0x50, 0x4b, 0x03, 0x04]) {
+                                    "xlsx" // ZIP-based (XLSX/OOXML)
+                                } else if bytes.starts_with(&[0xd0, 0xcf, 0x11, 0xe0]) {
+                                    "xls" // OLE2 (legacy XLS)
+                                } else {
+                                    "xlsx" // default to xlsx
+                                };
+                                let seq = nav_file_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                let fname = format!("compass-commission-{}-{}.{}", std::process::id(), seq, ext);
+                                let tmp_path = std::env::temp_dir().join(&fname);
+                                match std::fs::write(&tmp_path, &bytes) {
+                                    Ok(_) => {
+                                        tracing::info!("[navigation] Wrote {} bytes to {:?}", bytes.len(), tmp_path);
+                                        emit_log(&nav_handle, "success", "download",
+                                            &format!("Commission file: {} bytes, month={}", bytes.len(), month), None);
+                                        let month_val = if month.is_empty() {
+                                            serde_json::Value::Null
+                                        } else {
+                                            serde_json::Value::String(month.clone())
+                                        };
+                                        let payload = serde_json::json!({
+                                            "month": month_val,
+                                            "filePath": tmp_path.to_string_lossy()
+                                        }).to_string();
+                                        let _ = nav_handle.emit("carrier-commission-file", &payload);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("[navigation] Failed to write temp file: {}", e);
+                                        emit_log(&nav_handle, "error", "download",
+                                            &format!("Failed to write temp file: {}", e), None);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("[navigation] Base64 decode failed: {}", e);
+                                emit_log(&nav_handle, "error", "download",
+                                    &format!("Base64 decode failed: {}", e), None);
+                            }
                         }
                     }
                 } else if path == "/page-ready" {
@@ -187,7 +241,20 @@ pub async fn open_carrier_login(
             match event {
                 DownloadEvent::Requested { url, destination } => {
                     let seq = dl_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    let fname = format!("compass-dl-{}-{}.csv", std::process::id(), seq);
+                    // Determine file extension from URL
+                    let url_str = url.as_str();
+                    let ext = url_str.rsplit('/').next()
+                        .and_then(|segment: &str| {
+                            let segment = segment.split('?').next().unwrap_or(segment);
+                            let lower = segment.to_lowercase();
+                            if lower.ends_with(".xls") { Some("xls") }
+                            else if lower.ends_with(".xlsx") { Some("xlsx") }
+                            else if lower.ends_with(".csv") { Some("csv") }
+                            else if lower.ends_with(".txt") { Some("txt") }
+                            else { None }
+                        })
+                        .unwrap_or("bin");
+                    let fname = format!("compass-dl-{}-{}.{}", std::process::id(), seq, ext);
                     let tmp = std::env::temp_dir().join(fname);
                     let pending = dl_month.lock().unwrap().clone();
                     tracing::info!("[download] REQUESTED: url={}", url);
@@ -207,40 +274,68 @@ pub async fn open_carrier_login(
                         if let Some(ref path) = path {
                             let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
                             tracing::info!("[download] File on disk: {} bytes at {:?}", file_size, path);
-                            match std::fs::read_to_string(path) {
-                                Ok(content) => {
-                                    let first_line = content.lines().next().unwrap_or("(empty)");
-                                    tracing::info!("[download] Content: {} bytes, first line: {:?}", content.len(), &first_line[..first_line.len().min(120)]);
-                                    if content.contains('|') && !content.trim_start().starts_with('<') {
-                                        let month = dl_month.lock().unwrap().take();
-                                        tracing::info!("[download] Valid CSV detected, month={:?}", month);
-                                        emit_log(&dl_log_handle, "success", "download",
-                                            &format!("Download complete: {} bytes, pipe-delimited CSV, month={:?}", content.len(), month), None);
-                                        let month_val = match month {
-                                            Some(m) => serde_json::Value::String(m),
-                                            None => serde_json::Value::Null,
-                                        };
-                                        let payload = serde_json::json!([{
-                                            "month": month_val,
-                                            "csv": content
-                                        }]).to_string();
-                                        tracing::info!("[download] Emitting carrier-commission-data ({} bytes payload)", payload.len());
-                                        match dl_handle.emit("carrier-commission-data", &payload) {
-                                            Ok(_) => tracing::info!("[download] carrier-commission-data emitted OK"),
-                                            Err(e) => tracing::error!("[download] Failed to emit: {}", e),
+
+                            // Check if this is a text/CSV file or a binary spreadsheet
+                            let path_str = path.to_string_lossy().to_lowercase();
+                            let is_spreadsheet = path_str.ends_with(".xls") || path_str.ends_with(".xlsx");
+
+                            if is_spreadsheet {
+                                // Binary spreadsheet — emit as file path for the frontend to import
+                                let month = dl_month.lock().unwrap().take();
+                                tracing::info!("[download] Spreadsheet detected, month={:?}, path={:?}", month, path);
+                                emit_log(&dl_log_handle, "success", "download",
+                                    &format!("Spreadsheet downloaded: {} bytes, month={:?}", file_size, month), None);
+                                let month_val = match month {
+                                    Some(m) => serde_json::Value::String(m),
+                                    None => serde_json::Value::Null,
+                                };
+                                let payload = serde_json::json!({
+                                    "month": month_val,
+                                    "filePath": path.to_string_lossy()
+                                }).to_string();
+                                tracing::info!("[download] Emitting carrier-commission-file ({} bytes payload)", payload.len());
+                                match dl_handle.emit("carrier-commission-file", &payload) {
+                                    Ok(_) => tracing::info!("[download] carrier-commission-file emitted OK"),
+                                    Err(e) => tracing::error!("[download] Failed to emit: {}", e),
+                                }
+                                // Don't delete — the import command will read it
+                            } else {
+                                // Try text/CSV path (existing Humana behavior)
+                                match std::fs::read_to_string(path) {
+                                    Ok(content) => {
+                                        let first_line = content.lines().next().unwrap_or("(empty)");
+                                        tracing::info!("[download] Content: {} bytes, first line: {:?}", content.len(), &first_line[..first_line.len().min(120)]);
+                                        if content.contains('|') && !content.trim_start().starts_with('<') {
+                                            let month = dl_month.lock().unwrap().take();
+                                            tracing::info!("[download] Valid CSV detected, month={:?}", month);
+                                            emit_log(&dl_log_handle, "success", "download",
+                                                &format!("Download complete: {} bytes, pipe-delimited CSV, month={:?}", content.len(), month), None);
+                                            let month_val = match month {
+                                                Some(m) => serde_json::Value::String(m),
+                                                None => serde_json::Value::Null,
+                                            };
+                                            let payload = serde_json::json!([{
+                                                "month": month_val,
+                                                "csv": content
+                                            }]).to_string();
+                                            tracing::info!("[download] Emitting carrier-commission-data ({} bytes payload)", payload.len());
+                                            match dl_handle.emit("carrier-commission-data", &payload) {
+                                                Ok(_) => tracing::info!("[download] carrier-commission-data emitted OK"),
+                                                Err(e) => tracing::error!("[download] Failed to emit: {}", e),
+                                            }
+                                        } else {
+                                            tracing::warn!("[download] NOT CSV: contains_pipe={}, starts_with_html={}", content.contains('|'), content.trim_start().starts_with('<'));
+                                            tracing::warn!("[download] First 200 chars: {:?}", &content[..content.len().min(200)]);
+                                            emit_log(&dl_log_handle, "warn", "download", "Downloaded file is not CSV data, skipping", None);
                                         }
-                                    } else {
-                                        tracing::warn!("[download] NOT CSV: contains_pipe={}, starts_with_html={}", content.contains('|'), content.trim_start().starts_with('<'));
-                                        tracing::warn!("[download] First 200 chars: {:?}", &content[..content.len().min(200)]);
-                                        emit_log(&dl_log_handle, "warn", "download", "Downloaded file is not CSV data, skipping", None);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("[download] Failed to read file: {}", e);
+                                        emit_log(&dl_log_handle, "error", "download", &format!("Failed to read downloaded file: {}", e), None);
                                     }
                                 }
-                                Err(e) => {
-                                    tracing::error!("[download] Failed to read file: {}", e);
-                                    emit_log(&dl_log_handle, "error", "download", &format!("Failed to read downloaded file: {}", e), None);
-                                }
+                                let _ = std::fs::remove_file(path);
                             }
-                            let _ = std::fs::remove_file(path);
                         } else {
                             tracing::warn!("[download] Success but no path returned");
                         }

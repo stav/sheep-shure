@@ -256,6 +256,173 @@ window.__compassBobFetched = false;
 window.__compassFetchDevoted(false);
 "#;
 
+/// Commission fetch script: navigates to /commissions, paginates through the table,
+/// and downloads all "View Spreadsheet" XLS files sequentially.
+const COMMISSION_FETCH_SCRIPT: &str = r#"
+(async function() {
+    try {
+        console.log('[Compass] Commission fetch: starting, pathname=' + window.location.pathname);
+
+        // Suppress BOB auto-fetch in case it hasn't fired yet
+        window.__compassBobFetched = true;
+
+        // Wait for the table to render
+        let table = null;
+        for (let attempt = 0; attempt < 40; attempt++) {
+            table = document.querySelector('table');
+            if (table && table.querySelectorAll('tbody tr').length > 0) break;
+            table = null;
+            await new Promise(r => setTimeout(r, 500));
+        }
+        if (!table) {
+            throw new Error('Commission table not found after 20s');
+        }
+        console.log('[Compass] Commission table found');
+
+        // Collect all spreadsheet links across all pages
+        let allLinks = [];
+
+        async function collectLinksFromCurrentPage() {
+            const rows = document.querySelectorAll('table tbody tr');
+            for (const row of rows) {
+                const link = row.querySelector('a[href*="spreadsheet"], a[href*=".xls"]');
+                if (!link) {
+                    // Also check for links with "View Spreadsheet" text
+                    const textLinks = row.querySelectorAll('a');
+                    for (const tl of textLinks) {
+                        if ((tl.textContent || '').trim().toLowerCase().includes('spreadsheet')) {
+                            // Extract pay period from the row text
+                            const cells = row.querySelectorAll('td');
+                            let payPeriod = null;
+                            for (const cell of cells) {
+                                // Look for date patterns like "Jan 30, 2026" or "2026-01-30"
+                                const text = (cell.textContent || '').trim();
+                                const dateMatch = text.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+                                if (dateMatch) {
+                                    const monthNames = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                                                        Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+                                    const mon = monthNames[dateMatch[1]] || '01';
+                                    payPeriod = dateMatch[3] + '-' + mon;
+                                    break;
+                                }
+                                const isoMatch = text.match(/(\d{4})-(\d{2})-\d{2}/);
+                                if (isoMatch) {
+                                    payPeriod = isoMatch[1] + '-' + isoMatch[2];
+                                    break;
+                                }
+                            }
+                            allLinks.push({ element: tl, month: payPeriod, href: tl.href || '' });
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                // Direct href match
+                const cells = row.querySelectorAll('td');
+                let payPeriod = null;
+                for (const cell of cells) {
+                    const text = (cell.textContent || '').trim();
+                    const dateMatch = text.match(/([A-Z][a-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+                    if (dateMatch) {
+                        const monthNames = {Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
+                                            Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12'};
+                        const mon = monthNames[dateMatch[1]] || '01';
+                        payPeriod = dateMatch[3] + '-' + mon;
+                        break;
+                    }
+                    const isoMatch = text.match(/(\d{4})-(\d{2})-\d{2}/);
+                    if (isoMatch) {
+                        payPeriod = isoMatch[1] + '-' + isoMatch[2];
+                        break;
+                    }
+                }
+                allLinks.push({ element: link, month: payPeriod, href: link.href || '' });
+            }
+        }
+
+        // Collect from first page
+        await collectLinksFromCurrentPage();
+
+        // Handle pagination — look for "next" button and iterate
+        let maxPages = 50;
+        while (maxPages-- > 0) {
+            const nextBtn = document.querySelector(
+                'button[aria-label="Next page"], button[aria-label="next"], ' +
+                'a[aria-label="Next page"], a[aria-label="next"], ' +
+                '[class*="next"]:not([disabled]), button:not([disabled])'
+            );
+            // More specific: find a next-page button
+            let actualNext = null;
+            const candidates = document.querySelectorAll('button, a');
+            for (const c of candidates) {
+                const label = (c.getAttribute('aria-label') || '').toLowerCase();
+                const text = (c.textContent || '').trim().toLowerCase();
+                if ((label.includes('next') || text === 'next' || text === '>') && !c.disabled) {
+                    actualNext = c;
+                    break;
+                }
+            }
+            if (!actualNext) break;
+
+            const prevCount = allLinks.length;
+            actualNext.click();
+            // Wait for new rows to load
+            await new Promise(r => setTimeout(r, 2000));
+            await collectLinksFromCurrentPage();
+            // If no new links were added, we've reached the end
+            if (allLinks.length === prevCount) break;
+        }
+
+        console.log('[Compass] Found ' + allLinks.length + ' spreadsheet links total');
+
+        if (allLinks.length === 0) {
+            throw new Error('No spreadsheet download links found on the commissions page.');
+        }
+
+        // Download each file via fetch(), convert to base64, and pass to Rust
+        // (Tauri's on_download doesn't trigger for cross-origin links or blob URLs in WebKitGTK)
+        for (let i = 0; i < allLinks.length; i++) {
+            const item = allLinks[i];
+            const href = item.element.href || item.element.getAttribute('href') || '';
+            if (!href) {
+                console.warn('[Compass] Skipping link ' + (i+1) + ' — no href');
+                continue;
+            }
+            console.log('[Compass] Downloading ' + (i+1) + '/' + allLinks.length + ' month=' + item.month + ' href=' + href);
+
+            try {
+                const resp = await fetch(href);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const buf = await resp.arrayBuffer();
+                const bytes = new Uint8Array(buf);
+                // Convert to base64
+                let binary = '';
+                for (let j = 0; j < bytes.length; j++) {
+                    binary += String.fromCharCode(bytes[j]);
+                }
+                const b64 = btoa(binary);
+                console.log('[Compass] Fetched ' + bytes.length + ' bytes, base64 length=' + b64.length);
+
+                // Signal file data to Rust via navigation URL
+                window.location.href = 'http://compass-sync.localhost/commission-file?month=' +
+                    encodeURIComponent(item.month || '') + '&data=' + encodeURIComponent(b64);
+                // Wait for Rust to process
+                await new Promise(r => setTimeout(r, 500));
+            } catch (fetchErr) {
+                console.error('[Compass] Failed to fetch ' + href + ': ' + fetchErr);
+            }
+        }
+
+        console.log('[Compass] All ' + allLinks.length + ' commission downloads complete');
+
+    } catch (e) {
+        console.error('[Compass] Commission fetch error:', e);
+        window.location.href = 'http://compass-sync.localhost/error?message=' +
+            encodeURIComponent('Commission fetch: ' + e.toString());
+    }
+})();
+"#;
+
 // ── GraphQL response types (for the reqwest fallback) ───────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -379,6 +546,10 @@ impl CarrierPortal for DevotedPortal {
 
     fn sync_instruction(&self) -> &str {
         "Log in to Devoted — data will sync automatically."
+    }
+
+    fn commission_fetch_script(&self) -> Option<&str> {
+        Some(COMMISSION_FETCH_SCRIPT)
     }
 
     async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError> {

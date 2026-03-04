@@ -118,6 +118,7 @@ pub fn run() {
             commands::delete_commission_deposit,
             commands::import_commission_csv,
             commands::trigger_commission_fetch,
+            commands::trigger_carrier_commission_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Compass application");

@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::io::{Seek, Write};
 use tauri::{AppHandle, Emitter, Listener, Manager, State};
 
+use crate::carrier_sync;
+
 use crate::db::DbState;
 use crate::models::{
     CarrierMonthSummary, CommissionDeposit, CommissionDepositListItem, CommissionEntryListItem,
@@ -274,6 +276,74 @@ pub fn import_commission_csv(
             )
         })
         .map_err(|e| e.to_string())
+}
+
+// ============================================================================
+// Generic Carrier Commission Fetch
+// ============================================================================
+
+/// Trigger a carrier's commission fetch script in the existing webview.
+/// The carrier must implement `commission_fetch_script()`.
+#[tauri::command]
+pub async fn trigger_carrier_commission_fetch(
+    app: AppHandle,
+    carrier_id: String,
+) -> Result<(), String> {
+    let portal = carrier_sync::get_portal(&carrier_id)
+        .ok_or_else(|| format!("No portal integration for carrier: {}", carrier_id))?;
+
+    let script = portal
+        .commission_fetch_script()
+        .ok_or_else(|| format!("{} does not support automated commission fetch", portal.carrier_name()))?;
+
+    let webview = app
+        .get_webview_window("carrier-login")
+        .ok_or("Carrier login window is not open. Open the portal and log in first.")?;
+
+    let current_url = webview.url().map(|u| u.to_string()).unwrap_or_else(|_| "?".into());
+    tracing::info!("[carrier-commission-fetch] Webview found, current url={}", current_url);
+
+    // If not already on /commissions, navigate there first and wait for page load
+    let needs_nav = !current_url.contains("/commissions");
+    if needs_nav {
+        tracing::info!("[carrier-commission-fetch] Navigating to /commissions first");
+
+        // Set up a one-shot listener for page load
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        let tx = std::sync::Mutex::new(Some(tx));
+        let lid = app.once("carrier-page-loaded", move |_| {
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+        });
+
+        webview.eval("window.location.href = '/commissions';").map_err(|e| e.to_string())?;
+
+        // Wait up to 15s for the page to load
+        match tokio::time::timeout(std::time::Duration::from_secs(15), rx).await {
+            Ok(Ok(())) => {
+                tracing::info!("[carrier-commission-fetch] /commissions page loaded");
+            }
+            _ => {
+                app.unlisten(lid);
+                return Err("Timed out waiting for commissions page to load.".to_string());
+            }
+        }
+
+        // Give the page a moment to render + suppress BOB auto-fetch
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let _ = webview.eval("window.__compassBobFetched = true;");
+    }
+
+    tracing::info!("[carrier-commission-fetch] Evaluating commission fetch script ({} bytes)", script.len());
+
+    webview.eval(script).map_err(|e| {
+        tracing::error!("[carrier-commission-fetch] eval FAILED: {}", e);
+        e.to_string()
+    })?;
+
+    tracing::info!("[carrier-commission-fetch] eval() returned OK");
+    Ok(())
 }
 
 // ============================================================================

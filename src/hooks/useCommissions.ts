@@ -199,6 +199,15 @@ export function useImportCommissionCsv() {
   });
 }
 
+// ── Generic Carrier Commission Fetch ─────────────────────────────────────────
+
+export function useTriggerCarrierCommissionFetch() {
+  return useMutation({
+    mutationFn: (args: { carrierId: string }) =>
+      tauriInvoke("trigger_carrier_commission_fetch", args),
+  });
+}
+
 // ── Commission Deposits ──────────────────────────────────────────────────────
 
 export function useCommissionDeposits(carrierId?: string, month?: string) {

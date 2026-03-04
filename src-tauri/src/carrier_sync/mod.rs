@@ -62,6 +62,12 @@ pub trait CarrierPortal: Send + Sync {
         "Log in, navigate to the Book of Business page, then click Sync Now."
     }
 
+    /// Optional JS to fetch commission statements from the carrier portal.
+    /// Returns None if the carrier doesn't support automated commission fetch.
+    fn commission_fetch_script(&self) -> Option<&str> {
+        None
+    }
+
     /// Fetch members via HTTP using cookies (fallback approach).
     async fn fetch_members(&self, cookies: &str) -> Result<Vec<PortalMember>, AppError>;
 }

@@ -20,6 +20,7 @@ import {
   useDeleteCommissionBatch,
   useTriggerCommissionFetch,
   useImportCommissionCsv,
+  useTriggerCarrierCommissionFetch,
 } from "@/hooks";
 import { useOpenCarrierLogin } from "@/hooks/useCarrierSync";
 import { ActivityLog } from "./ActivityLog";
@@ -113,15 +114,30 @@ export function StatementImportTab() {
   const logEntriesRef = useRef(logEntries);
   logEntriesRef.current = logEntries;
 
+  // Devoted fetch state
+  const [devotedFetchPhase, setDevotedFetchPhase] = useState<FetchPhase>("idle");
+  const [devotedFetchError, setDevotedFetchError] = useState<string | null>(null);
+  const [devotedFetchResults, setDevotedFetchResults] = useState<StatementImportResult[]>([]);
+  const [devotedLogEntries, setDevotedLogEntries] = useState<ImportLogEntry[]>([]);
+  const [showDevotedLog, setShowDevotedLog] = useState(false);
+  // Persistent flag for log routing — stays true for the entire Devoted fetch session
+  const devotedActiveRef = useRef(false);
+
   const importStatement = useImportCommissionStatement();
   const deleteBatch = useDeleteCommissionBatch();
   const openLogin = useOpenCarrierLogin();
   const triggerFetch = useTriggerCommissionFetch();
   const importCsv = useImportCommissionCsv();
+  const triggerCarrierFetch = useTriggerCarrierCommissionFetch();
 
   // Find the Humana carrier ID from the carriers list
   const humanaCarrier = carriers?.find(
     (c) => c.short_name?.toLowerCase() === "humana" || c.name.toLowerCase().includes("humana")
+  );
+
+  // Find the Devoted carrier ID
+  const devotedCarrier = carriers?.find(
+    (c) => c.short_name?.toLowerCase() === "devoted" || c.name.toLowerCase().includes("devoted")
   );
 
   // Handle incoming commission CSV data from the webview
@@ -179,10 +195,54 @@ export function StatementImportTab() {
     [humanaCarrier, importCsv]
   );
 
+  // Handle incoming spreadsheet file downloads (XLS/XLSX) from the webview
+  const handleCommissionFile = useCallback(
+    (payloadJson: string) => {
+      if (!devotedCarrier) return;
+      let payload: { month: string | null; filePath: string };
+      try {
+        payload = JSON.parse(payloadJson);
+      } catch {
+        setDevotedFetchError("Failed to parse commission file event.");
+        return;
+      }
+
+      const month = payload.month || "";
+      const filePath = payload.filePath;
+      if (!filePath) return;
+
+      setDevotedFetchPhase("importing");
+
+      importStatement.mutate(
+        {
+          filePath,
+          carrierId: devotedCarrier.id,
+          commissionMonth: month,
+          columnMapping: {},
+        },
+        {
+          onSuccess: (data) => {
+            setDevotedFetchResults((prev) => [...prev, data]);
+            setDevotedFetchPhase("idle");
+          },
+          onError: (err) => {
+            setDevotedFetchError(`Import failed: ${err}`);
+            setDevotedFetchPhase("idle");
+          },
+        }
+      );
+    },
+    [devotedCarrier, importStatement]
+  );
+
   // Listen for events from the carrier webview
   useEffect(() => {
     const unlistenData = listen<string>("carrier-commission-data", (event) => {
       handleCommissionData(event.payload);
+    });
+
+    const unlistenFile = listen<string>("carrier-commission-file", (event) => {
+      handleCommissionFile(event.payload);
     });
 
     const unlistenError = listen<string>("carrier-sync-error", (event) => {
@@ -190,18 +250,29 @@ export function StatementImportTab() {
         setFetchError(event.payload);
         setFetchPhase("idle");
       }
+      if (devotedActiveRef.current) {
+        setDevotedFetchError(event.payload);
+        setDevotedFetchPhase("idle");
+        devotedActiveRef.current = false;
+      }
     });
 
     const unlistenLog = listen<ImportLogEntry>("commission-import-log", (event) => {
-      setLogEntries((prev) => [...prev, event.payload]);
+      // Route log entries based on persistent flag (avoids stale closure issues)
+      if (devotedActiveRef.current) {
+        setDevotedLogEntries((prev) => [...prev, event.payload]);
+      } else {
+        setLogEntries((prev) => [...prev, event.payload]);
+      }
     });
 
     return () => {
       unlistenData.then((fn) => fn());
+      unlistenFile.then((fn) => fn());
       unlistenError.then((fn) => fn());
       unlistenLog.then((fn) => fn());
     };
-  }, [handleCommissionData, fetchPhase]);
+  }, [handleCommissionData, handleCommissionFile, fetchPhase]);
 
   const handleOpenPortal = () => {
     setFetchError(null);
@@ -382,6 +453,154 @@ export function StatementImportTab() {
           {fetchResults.length > 0 && (
             <div className="space-y-2">
               {fetchResults.map((r, i) => (
+                <div key={i} className="grid grid-cols-5 gap-4 text-sm rounded border p-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground">Total:</span>{" "}
+                    <span className="font-medium">{r.total}</span>
+                    <button
+                      onClick={() => deleteBatch.mutate(r.batch_id)}
+                      disabled={deleteBatch.isPending}
+                      className="ml-1 text-red-400 hover:text-red-600 disabled:opacity-50"
+                      title="Undo import"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Matched:</span>{" "}
+                    <span className="font-medium text-green-600">{r.matched}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Unmatched:</span>{" "}
+                    <span className="font-medium text-yellow-600">{r.unmatched}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Skipped:</span>{" "}
+                    <span className="font-medium text-muted-foreground">{r.skipped}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Errors:</span>{" "}
+                    <span className="font-medium text-red-600">{r.errors}</span>
+                  </div>
+                  {r.unmatched_names.length > 0 && (
+                    <div className="col-span-5">
+                      <p className="text-xs font-medium mb-1">Unmatched:</p>
+                      <ul className="text-xs text-muted-foreground list-disc list-inside">
+                        {r.unmatched_names.map((name, j) => (
+                          <li key={j}>{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="col-span-5">
+                    <BatchEntryList batchId={r.batch_id} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Devoted Auto-Fetch Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Fetch from Devoted</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Open the Devoted portal, log in, then click Fetch All Statements
+            to download and import all available commission spreadsheets.
+          </p>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {(devotedFetchPhase === "idle" || devotedFetchPhase === "login") && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDevotedFetchError(null);
+                    setDevotedFetchResults([]);
+                    devotedActiveRef.current = false;
+                    setDevotedFetchPhase("login");
+                    openLogin.mutate("carrier-devoted", {
+                      onError: (err) => {
+                        setDevotedFetchError(String(err));
+                        setDevotedFetchPhase("idle");
+                      },
+                    });
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Open Devoted Portal
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!devotedCarrier) return;
+                    setDevotedFetchError(null);
+                    setDevotedFetchResults([]);
+                    setDevotedFetchPhase("fetching");
+                    devotedActiveRef.current = true;
+                    setDevotedLogEntries([]);
+                    setShowDevotedLog(true);
+                    triggerCarrierFetch.mutate(
+                      { carrierId: devotedCarrier.id },
+                      {
+                        onError: (err) => {
+                          setDevotedFetchError(String(err));
+                          setDevotedFetchPhase("idle");
+                        },
+                      }
+                    );
+                  }}
+                  disabled={!devotedCarrier}
+                >
+                  Fetch All Statements
+                </Button>
+              </>
+            )}
+
+            {devotedFetchPhase === "fetching" && (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">
+                  Fetching commission spreadsheets...
+                </span>
+              </>
+            )}
+
+            {devotedFetchPhase === "importing" && (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">
+                  Importing spreadsheets...
+                </span>
+              </>
+            )}
+          </div>
+
+          {devotedLogEntries.length > 0 && (
+            <div className="space-y-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => setShowDevotedLog(!showDevotedLog)}
+              >
+                <ScrollText className="h-3.5 w-3.5" />
+                {showDevotedLog ? "Hide" : "Show"} Activity Log ({devotedLogEntries.length})
+              </Button>
+              {showDevotedLog && <ActivityLog entries={devotedLogEntries} />}
+            </div>
+          )}
+
+          {devotedFetchError && (
+            <p className="text-sm text-red-600">{devotedFetchError}</p>
+          )}
+
+          {devotedFetchResults.length > 0 && (
+            <div className="space-y-2">
+              {devotedFetchResults.map((r, i) => (
                 <div key={i} className="grid grid-cols-5 gap-4 text-sm rounded border p-3">
                   <div className="flex items-center gap-1.5">
                     <span className="text-muted-foreground">Total:</span>{" "}

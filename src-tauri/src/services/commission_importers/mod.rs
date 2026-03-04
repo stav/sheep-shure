@@ -1,3 +1,4 @@
+mod devoted;
 mod generic;
 mod humana;
 
@@ -33,6 +34,7 @@ pub fn parse_statement_rows(
     carrier_short_name: &str,
 ) -> Result<Vec<ParsedCommissionRow>, AppError> {
     match carrier_short_name.to_lowercase().as_str() {
+        "devoted" => devoted::parse(file_path),
         "humana" => humana::parse(file_path),
         _ => generic::parse(file_path),
     }
