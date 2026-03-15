@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
@@ -42,6 +43,7 @@ const navItems = [
 
   { to: "/import", label: "Import", icon: Upload },
   { to: "/carrier-sync", label: "Carrier Sync", icon: RefreshCw },
+  { to: "/cloud-sync", label: "Web App Sync", icon: ArrowLeftRight },
   { to: "/commissions", label: "Commissions", icon: DollarSign },
 ];
 
@@ -52,6 +54,7 @@ const pageTitles: Record<string, string> = {
 
   "/import": "Import",
   "/carrier-sync": "Carrier Sync",
+  "/cloud-sync": "Web App Sync",
   "/commissions": "Commissions",
   "/settings": "Settings",
 };

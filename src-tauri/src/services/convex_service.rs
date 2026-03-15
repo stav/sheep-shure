@@ -184,6 +184,58 @@ pub async fn push_all(
     })
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudClient {
+    #[serde(rename = "_id")]
+    pub id: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub dob: Option<String>,
+    pub mbi: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub address_line1: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub zip: Option<String>,
+}
+
+pub async fn pull_clients_full(config: &ConvexConfig) -> Result<Vec<CloudClient>, String> {
+    let client = Client::new();
+    let url = format!("{}/api/sync/pull", config.base_url.trim_end_matches('/'));
+
+    let resp = client
+        .get(&url)
+        .bearer_auth(&config.token)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Convex returned {}: {}", status, text));
+    }
+
+    let val: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    let clients = val
+        .get("clients")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| serde_json::from_value::<CloudClient>(v.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(clients)
+}
+
 /// Pull all cloud data and return record counts.
 pub async fn pull_all(config: &ConvexConfig) -> Result<BulkPullResult, String> {
     let client = Client::new();

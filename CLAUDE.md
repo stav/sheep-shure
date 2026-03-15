@@ -16,10 +16,10 @@ The `WEBKIT_DISABLE_DMABUF_RENDERER=1` env var is required on Wayland to prevent
 
 ## Tauri Dev Console
 
-- To invoke Tauri commands from the browser dev console, use `window.__TAURI_INTERNALS__.__invoke()`:
+- To invoke Tauri commands from the browser dev console, use `window.__TAURI_INTERNALS__.invoke()`:
 
   ```js
-  await window.__TAURI_INTERNALS__.__invoke("command_name", { argName: "value" })
+  await window.__TAURI_INTERNALS__.invoke("command_name", { argName: "value" })
   ```
 
 - `window.__TAURI__.core.invoke()` and `window.__TAURI_INTERNALS__.core.invoke()` do **not** work.

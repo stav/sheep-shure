@@ -542,3 +542,66 @@ export interface CarrierMonthSummary {
   ok_count: number;
   issue_count: number;
 }
+
+// ── Cloud Sync ────────────────────────────────────────────────────────────────
+
+export interface LocalClientSummary {
+  id: string;
+  first_name: string;
+  last_name: string;
+  dob?: string;
+  mbi?: string;
+  phone?: string;
+  email?: string;
+  address_line1?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+}
+
+export interface CloudClientSummary {
+  cloud_id?: string;
+  first_name?: string;
+  last_name?: string;
+  dob?: string;
+  mbi?: string;
+  phone?: string;
+  email?: string;
+  address_line1?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+}
+
+export interface FieldDiff {
+  field: string;
+  local?: string;
+  cloud?: string;
+}
+
+export interface ClientConflict {
+  local: LocalClientSummary;
+  cloud: CloudClientSummary;
+  diffs: FieldDiff[];
+}
+
+export interface MatchedPair {
+  local: LocalClientSummary;
+  cloud: CloudClientSummary;
+}
+
+export interface ReconciliationResult {
+  only_local: LocalClientSummary[];
+  only_cloud: CloudClientSummary[];
+  conflicts: ClientConflict[];
+  matched: MatchedPair[];
+  already_decided_count: number;
+}
+
+export interface SyncDecision {
+  cloud_record_id: string;
+  decision: string;
+  diff?: string;
+  decided_at: string;
+  expires_at?: string;
+}

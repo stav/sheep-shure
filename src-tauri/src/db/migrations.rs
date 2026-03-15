@@ -44,6 +44,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 9,
         sql: include_str!("migrations/v009_raw_data.sql"),
     },
+    Migration {
+        version: 10,
+        sql: include_str!("migrations/v010_convex_sync.sql"),
+    },
 ];
 
 /// Run all pending migrations against the database.

@@ -7,6 +7,7 @@ import { ClientsPage, ClientDetailPage, ClientFormPage, DuplicateScanPage } from
 import { ImportPage } from "@/features/import";
 import { SettingsPage } from "@/features/settings";
 import { CarrierSyncPage } from "@/features/carrier-sync";
+import { CloudSyncPage } from "@/features/cloud-sync/CloudSyncPage";
 import { CommissionsPage } from "@/features/commissions";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -34,6 +35,7 @@ export function AppRouter() {
 
             <Route path="/import" element={<ImportPage />} />
             <Route path="/carrier-sync" element={<CarrierSyncPage />} />
+            <Route path="/cloud-sync" element={<CloudSyncPage />} />
             <Route path="/commissions" element={<CommissionsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>

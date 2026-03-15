@@ -292,6 +292,7 @@ pub fn hard_delete_client(conn: &Connection, id: &str) -> Result<(), AppError> {
     // Delete children in dependency order
     conn.execute("DELETE FROM conversation_entries WHERE client_id = ?1", params![id])?;
     conn.execute("DELETE FROM conversations WHERE client_id = ?1", params![id])?;
+    conn.execute("DELETE FROM commission_entries WHERE client_id = ?1", params![id])?;
     conn.execute("DELETE FROM enrollments WHERE client_id = ?1", params![id])?;
     conn.execute("DELETE FROM client_providers WHERE client_id = ?1", params![id])?;
     conn.execute("DELETE FROM clients WHERE id = ?1", params![id])?;

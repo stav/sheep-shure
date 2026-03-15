@@ -78,14 +78,14 @@ pub async fn push_all_to_convex(state: State<'_, DbState>) -> Result<BulkPushRes
                         "partADate": row.get::<_, Option<String>>(15)?,
                         "partBDate": row.get::<_, Option<String>>(16)?,
                         "orec": row.get::<_, Option<String>>(17)?,
-                        "isDualEligible": row.get::<_, Option<bool>>(18)?,
+                        "isDualEligible": row.get::<_, Option<bool>>(18)?.unwrap_or(false),
                         "dualStatusCode": row.get::<_, Option<String>>(19)?,
                         "lisLevel": row.get::<_, Option<String>>(20)?,
                         "medicaidId": row.get::<_, Option<String>>(21)?,
                         "leadSource": row.get::<_, Option<String>>(22)?,
                         "memberRecordLocator": row.get::<_, Option<String>>(23)?,
                         "notes": row.get::<_, Option<String>>(24)?,
-                        "isActive": row.get::<_, Option<bool>>(25)?,
+                        "isActive": row.get::<_, Option<bool>>(25)?.unwrap_or(true),
                     }))
                 })
                 .map_err(|e| crate::error::AppError::Database(e.to_string()))?
@@ -127,7 +127,7 @@ pub async fn push_all_to_convex(state: State<'_, DbState>) -> Result<BulkPushRes
                         "enrollmentPeriod": row.get::<_, Option<String>>(12)?,
                         "confirmationNumber": row.get::<_, Option<String>>(13)?,
                         "enrollmentSource": row.get::<_, Option<String>>(14)?,
-                        "isActive": row.get::<_, Option<bool>>(15)?,
+                        "isActive": row.get::<_, Option<bool>>(15)?.unwrap_or(true),
                     }))
                 })
                 .map_err(|e| crate::error::AppError::Database(e.to_string()))?
