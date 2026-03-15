@@ -3,12 +3,13 @@ import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { tauriInvoke } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Save, Download, Key, User, Loader2, Shield, Sun, Moon, Monitor, Palette, Database, HardDrive, Users, FileText, Clock } from "lucide-react";
+import { Save, Download, Key, User, Loader2, Shield, Sun, Moon, Monitor, Palette, Database, HardDrive, Users, FileText, Clock, Cloud, CloudUpload, CloudDownload } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -88,6 +89,152 @@ function AppearanceCard() {
             </button>
           ))}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Compass Cloud ─────────────────────────────────────────────────────────────
+
+function CompassCloudCard() {
+  const CONVEX_URLS = [
+    { label: "Production", value: "https://wandering-goose-882.convex.site" },
+    { label: "Development", value: "https://vivid-jellyfish-812.convex.site" },
+  ];
+
+  const [token, setToken] = useState("");
+  const [url, setUrl] = useState(CONVEX_URLS[0].value);
+  const [testing, setTesting] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+
+  useEffect(() => {
+    tauriInvoke<Record<string, string>>("get_settings").then((settings) => {
+      if (settings.convex_token) setToken(settings.convex_token);
+      if (settings.convex_url) setUrl(settings.convex_url);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    await tauriInvoke("update_settings", {
+      settings: { convex_token: token, convex_url: url },
+    });
+    toast.success("Cloud settings saved");
+  };
+
+  const handleTest = async () => {
+    await handleSave();
+    setTesting(true);
+    try {
+      const result = await tauriInvoke<{ connected: boolean; error: string | null }>(
+        "test_convex_connection",
+      );
+      if (result.connected) {
+        toast.success("Connected to Compass Cloud");
+      } else {
+        toast.error(result.error ?? "Connection failed");
+      }
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Connection failed");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handlePushAll = async () => {
+    setPushing(true);
+    try {
+      const result = await tauriInvoke<{
+        clients_inserted: number;
+        clients_updated: number;
+        enrollments_inserted: number;
+        enrollments_updated: number;
+      }>("push_all_to_convex");
+      toast.success(
+        `Pushed: ${result.clients_inserted + result.clients_updated} clients, ` +
+          `${result.enrollments_inserted + result.enrollments_updated} enrollments`,
+      );
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Push failed");
+    } finally {
+      setPushing(false);
+    }
+  };
+
+  const handlePullFromCloud = async () => {
+    setPulling(true);
+    try {
+      const result = await tauriInvoke<{
+        client_count: number;
+        enrollment_count: number;
+        carrier_count: number;
+      }>("pull_from_convex");
+      toast.info(
+        `Cloud has ${result.client_count} clients, ${result.enrollment_count} enrollments`,
+      );
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Pull failed");
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Cloud className="h-5 w-5" /> Compass Cloud
+        </CardTitle>
+        <CardDescription>
+          Sync your book of business with the Compass web app. Generate a token in{" "}
+          <span className="font-medium">app.compass.broker → Settings → Browser Extension</span>.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 max-w-lg">
+          <div className="space-y-2">
+            <Label htmlFor="convex_token">API Token</Label>
+            <Input
+              id="convex_token"
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste token from web app Settings"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="convex_url">Convex URL</Label>
+            <Input
+              id="convex_url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://your-deployment.convex.site"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleTest} disabled={testing || !token} variant="outline" size="sm">
+            {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
+            Test Connection
+          </Button>
+          <Button onClick={handlePushAll} disabled={pushing || !token} variant="outline" size="sm">
+            {pushing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CloudUpload className="mr-2 h-4 w-4" />}
+            Push All Data
+          </Button>
+          <Button onClick={handlePullFromCloud} disabled={pulling || !token} variant="outline" size="sm">
+            {pulling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-2 h-4 w-4" />}
+            Pull from Cloud
+          </Button>
+          <Button onClick={handleSave} disabled={!token} size="sm">
+            <Save className="mr-2 h-4 w-4" /> Save
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Carrier syncs automatically push to the cloud when configured. Local data is never
+          blocked by cloud availability.
+        </p>
       </CardContent>
     </Card>
   );
@@ -375,6 +522,11 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+
+      {/* Compass Cloud */}
+      <CompassCloudCard />
 
       {/* About */}
       <Card>

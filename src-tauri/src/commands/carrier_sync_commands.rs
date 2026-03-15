@@ -427,8 +427,9 @@ pub fn get_carrier_sync_info(carrier_id: String) -> Result<CarrierSyncInfo, Stri
 }
 
 /// Import selected portal members as new clients with enrollments.
+/// After the local SQLite write succeeds, fires an async push to Convex if configured.
 #[tauri::command]
-pub fn import_portal_members(
+pub async fn import_portal_members(
     carrier_id: String,
     members_json: String,
     state: State<'_, DbState>,
@@ -436,11 +437,44 @@ pub fn import_portal_members(
     let members: Vec<PortalMember> =
         serde_json::from_str(&members_json).map_err(|e| format!("Failed to parse members: {}", e))?;
 
-    state
+    let (result, convex_config, carrier_short_name) = state
         .with_conn(|conn| {
-            crate::services::carrier_sync_service::import_portal_members(conn, &carrier_id, &members)
+            let result = crate::services::carrier_sync_service::import_portal_members(
+                conn,
+                &carrier_id,
+                &members,
+            )?;
+
+            let convex_config = crate::services::convex_service::ConvexConfig::from_settings(conn);
+
+            let carrier_short_name: Option<String> = conn
+                .query_row(
+                    "SELECT short_name FROM carriers WHERE id = ?1",
+                    rusqlite::params![carrier_id],
+                    |row| row.get(0),
+                )
+                .ok()
+                .flatten();
+
+            Ok((result, convex_config, carrier_short_name))
         })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Fire-and-forget: push to Convex without blocking the local result.
+    if let (Some(config), Some(short_name)) = (convex_config, carrier_short_name) {
+        tokio::spawn(async move {
+            if let Err(e) =
+                crate::services::convex_service::push_carrier_sync(&config, &short_name, &members)
+                    .await
+            {
+                tracing::warn!("Convex carrier-sync push failed: {}", e);
+            } else {
+                tracing::info!("Convex carrier-sync push succeeded for {}", short_name);
+            }
+        });
+    }
+
+    Ok(result)
 }
 
 /// Confirm disenrollment for selected enrollment IDs.

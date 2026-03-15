@@ -1,5 +1,6 @@
 pub mod auth_service;
 pub mod carrier_sync_service;
+pub mod convex_service;
 pub mod client_service;
 pub mod commission_importers;
 pub mod commission_service;

@@ -119,6 +119,9 @@ pub fn run() {
             commands::import_commission_csv,
             commands::trigger_commission_fetch,
             commands::trigger_carrier_commission_fetch,
+            commands::test_convex_connection,
+            commands::push_all_to_convex,
+            commands::pull_from_convex,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Compass application");

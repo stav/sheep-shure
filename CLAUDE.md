@@ -6,6 +6,14 @@
 - Use shadcn/ui component patterns consistently.
 - Package manager: bun (not npm or pnpm).
 
+## Running in Dev
+
+```bash
+WEBKIT_DISABLE_DMABUF_RENDERER=1 bun run tauri dev
+```
+
+The `WEBKIT_DISABLE_DMABUF_RENDERER=1` env var is required on Wayland to prevent WebKit rendering issues.
+
 ## Tauri Dev Console
 
 - To invoke Tauri commands from the browser dev console, use `window.__TAURI_INTERNALS__.__invoke()`:
