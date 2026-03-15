@@ -203,13 +203,19 @@ function CompassCloudCard() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="convex_url">Convex URL</Label>
-            <Input
-              id="convex_url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://your-deployment.convex.site"
-            />
+            <Label>Convex URL</Label>
+            <Select value={url} onValueChange={setUrl}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONVEX_URLS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label} — {opt.value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
