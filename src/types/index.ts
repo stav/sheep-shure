@@ -595,7 +595,6 @@ export interface ReconciliationResult {
   only_cloud: CloudClientSummary[];
   conflicts: ClientConflict[];
   matched: MatchedPair[];
-  already_decided_count: number;
 }
 
 export interface SyncDecision {

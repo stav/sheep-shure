@@ -127,6 +127,7 @@ pub fn run() {
             commands::push_client_to_convex,
             commands::save_sync_decision,
             commands::get_sync_decisions,
+            commands::pull_client_from_cloud,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running Compass application");

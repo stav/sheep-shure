@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::DbState;
+use crate::models::CreateClientInput;
 use crate::services::convex_service::{self, BulkPushResult, CloudClient, ConvexConfig};
+use crate::services::client_service;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -22,7 +24,7 @@ pub struct LocalClientSummary {
     pub zip: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CloudClientSummary {
     pub cloud_id: Option<String>,
     pub first_name: Option<String>,
@@ -63,7 +65,6 @@ pub struct ReconciliationResult {
     pub only_cloud: Vec<CloudClientSummary>,
     pub conflicts: Vec<ClientConflict>,
     pub matched: Vec<MatchedPair>,
-    pub already_decided_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -228,8 +229,8 @@ pub async fn compare_with_convex(state: State<'_, DbState>) -> Result<Reconcilia
     // Pull cloud clients
     let cloud_clients = convex_service::pull_clients_full(&config).await?;
 
-    // Load local active clients + already-decided cloud IDs
-    let (locals, decided_ids): (Vec<LocalClientSummary>, std::collections::HashSet<String>) = state
+    // Load local active clients
+    let locals: Vec<LocalClientSummary> = state
         .with_conn(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, first_name, last_name, dob, mbi, phone, email,
@@ -257,19 +258,7 @@ pub async fn compare_with_convex(state: State<'_, DbState>) -> Result<Reconcilia
                 .filter_map(|r| r.ok())
                 .collect();
 
-            // Non-expired decisions
-            let mut stmt2 = conn.prepare(
-                "SELECT cloud_record_id FROM convex_sync_decisions
-                 WHERE expires_at IS NULL OR expires_at > datetime('now')",
-            ).map_err(|e| crate::error::AppError::Database(e.to_string()))?;
-
-            let decided: std::collections::HashSet<String> = stmt2
-                .query_map([], |row| row.get::<_, String>(0))
-                .map_err(|e| crate::error::AppError::Database(e.to_string()))?
-                .filter_map(|r| r.ok())
-                .collect();
-
-            Ok((locals, decided))
+            Ok(locals)
         })
         .map_err(|e| e.to_string())?;
 
@@ -277,17 +266,8 @@ pub async fn compare_with_convex(state: State<'_, DbState>) -> Result<Reconcilia
     let mut only_cloud: Vec<CloudClientSummary> = Vec::new();
     let mut conflicts: Vec<ClientConflict> = Vec::new();
     let mut matched: Vec<MatchedPair> = Vec::new();
-    let mut already_decided_count = 0usize;
 
     for cloud in &cloud_clients {
-        let cloud_id = cloud.id.as_deref().unwrap_or("");
-
-        // Skip already decided
-        if !cloud_id.is_empty() && decided_ids.contains(cloud_id) {
-            already_decided_count += 1;
-            continue;
-        }
-
         match find_local_match(&locals, cloud) {
             Some(idx) => {
                 matched_local_indices.insert(idx);
@@ -326,7 +306,6 @@ pub async fn compare_with_convex(state: State<'_, DbState>) -> Result<Reconcilia
         only_cloud,
         conflicts,
         matched,
-        already_decided_count,
     })
 }
 
@@ -489,6 +468,49 @@ pub fn get_sync_decisions(state: State<'_, DbState>) -> Result<Vec<SyncDecision>
                 .collect();
 
             Ok(items)
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Pull a cloud-only client into the local database.
+#[tauri::command]
+pub fn pull_client_from_cloud(
+    client: CloudClientSummary,
+    state: State<'_, DbState>,
+) -> Result<(), String> {
+    state
+        .with_conn(|conn| {
+            let input = CreateClientInput {
+                first_name: client.first_name.unwrap_or_default(),
+                last_name: client.last_name.unwrap_or_default(),
+                middle_name: None,
+                dob: client.dob,
+                gender: None,
+                phone: client.phone,
+                phone2: None,
+                email: client.email,
+                address_line1: client.address_line1,
+                address_line2: None,
+                city: client.city,
+                state: client.state,
+                zip: client.zip,
+                county: None,
+                mbi: client.mbi,
+                part_a_date: None,
+                part_b_date: None,
+                orec: None,
+                is_dual_eligible: None,
+                dual_status_code: None,
+                lis_level: None,
+                medicaid_id: None,
+                lead_source: Some("cloud_sync".to_string()),
+                member_record_locator: None,
+                tags: None,
+                notes: None,
+            };
+            client_service::create_client(conn, &input)
+                .map(|_| ())
+                .map_err(|e| crate::error::AppError::Database(e.to_string()))
         })
         .map_err(|e| e.to_string())
 }

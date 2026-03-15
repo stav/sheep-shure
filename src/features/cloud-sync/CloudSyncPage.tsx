@@ -326,6 +326,31 @@ function MatchedTab({ pairs }: { pairs: MatchedPair[] }) {
   );
 }
 
+// ── Skipped tab ────────────────────────────────────────────────────────────────
+
+function SkippedTab({ entries }: { entries: SkippedEntry[] }) {
+  if (entries.length === 0)
+    return <p className="text-sm text-muted-foreground py-6 text-center">No clients skipped this session.</p>;
+
+  const sourceLabel: Record<string, string> = {
+    local: "Local only",
+    cloud: "Cloud only",
+    conflict: "Conflict",
+  };
+
+  return (
+    <div className="space-y-2">
+      {entries.map((e) => (
+        <div key={e.id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
+          <SkipForward className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="font-medium flex-1">{e.name}</span>
+          <Badge variant="outline" className="text-xs">{sourceLabel[e.source]}</Badge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── History tab ────────────────────────────────────────────────────────────────
 
 function HistoryTab({ decisions }: { decisions: SyncDecision[] }) {
@@ -363,12 +388,19 @@ function HistoryTab({ decisions }: { decisions: SyncDecision[] }) {
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
+interface SkippedEntry {
+  id: string;
+  name: string;
+  source: "local" | "cloud" | "conflict";
+}
+
 export function CloudSyncPage() {
   const [result, setResult] = useState<ReconciliationResult | null>(null);
   const [decisions, setDecisions] = useState<SyncDecision[]>([]);
+  const [skipped, setSkipped] = useState<SkippedEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [deciding, setDeciding] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("local");
+  const [activeTab, setActiveTab] = useState("matched");
 
   const loadDecisions = async () => {
     try {
@@ -381,6 +413,7 @@ export function CloudSyncPage() {
 
   const handleLoad = async () => {
     setLoading(true);
+    setSkipped([]);
     try {
       const [r] = await Promise.all([
         tauriInvoke<ReconciliationResult>("compare_with_convex"),
@@ -401,6 +434,13 @@ export function CloudSyncPage() {
       if (decision === "pushed") {
         await tauriInvoke("push_client_to_convex", { clientId: cloudId });
       }
+      // For "pulled", create the client locally from cloud data
+      if (decision === "pulled") {
+        const cloudClient = result?.only_cloud.find((c) => (c.cloud_id ?? "") === cloudId);
+        if (cloudClient) {
+          await tauriInvoke("pull_client_from_cloud", { client: cloudClient });
+        }
+      }
 
       await tauriInvoke("save_sync_decision", {
         input: {
@@ -419,15 +459,40 @@ export function CloudSyncPage() {
         skip: "Skipped",
       };
       toast.success(label[decision] ?? decision);
-      // Remove the decided item from the result
+      // Track skipped entries for the Skipped tab
+      if (decision === "skip" && result) {
+        const localClient = result.only_local.find((c) => c.id === cloudId);
+        const cloudClient = result.only_cloud.find((c) => (c.cloud_id ?? "") === cloudId);
+        const conflict = result.conflicts.find((c) => (c.cloud.cloud_id ?? "") === cloudId);
+        const entry = localClient
+          ? { id: cloudId, name: `${localClient.first_name} ${localClient.last_name}`, source: "local" as const }
+          : cloudClient
+          ? { id: cloudId, name: [cloudClient.first_name, cloudClient.last_name].filter(Boolean).join(" "), source: "cloud" as const }
+          : conflict
+          ? { id: cloudId, name: `${conflict.local.first_name} ${conflict.local.last_name}`, source: "conflict" as const }
+          : null;
+        if (entry) setSkipped((prev) => [...prev, entry]);
+      }
+      // Remove the decided item and move pushed/pulled clients to matched
       setResult((prev) => {
         if (!prev) return prev;
+        const pushedClient = decision === "pushed"
+          ? prev.only_local.find((c) => c.id === cloudId)
+          : undefined;
+        const pulledCloud = decision === "pulled"
+          ? prev.only_cloud.find((c) => (c.cloud_id ?? "") === cloudId)
+          : undefined;
+        const newMatched = pushedClient
+          ? [...prev.matched, { local: pushedClient, cloud: { first_name: pushedClient.first_name, last_name: pushedClient.last_name, dob: pushedClient.dob, mbi: pushedClient.mbi, phone: pushedClient.phone, email: pushedClient.email, address_line1: pushedClient.address_line1, city: pushedClient.city, state: pushedClient.state, zip: pushedClient.zip } }]
+          : pulledCloud
+          ? [...prev.matched, { local: { id: cloudId, first_name: pulledCloud.first_name ?? "", last_name: pulledCloud.last_name ?? "", dob: pulledCloud.dob, mbi: pulledCloud.mbi, phone: pulledCloud.phone, email: pulledCloud.email, address_line1: pulledCloud.address_line1, city: pulledCloud.city, state: pulledCloud.state, zip: pulledCloud.zip }, cloud: pulledCloud }]
+          : prev.matched;
         return {
           ...prev,
           only_local: prev.only_local.filter((c) => c.id !== cloudId),
           only_cloud: prev.only_cloud.filter((c) => (c.cloud_id ?? "") !== cloudId),
           conflicts: prev.conflicts.filter((c) => (c.cloud.cloud_id ?? "") !== cloudId),
-          already_decided_count: prev.already_decided_count + 1,
+          matched: newMatched,
         };
       });
       await loadDecisions();
@@ -454,28 +519,34 @@ export function CloudSyncPage() {
 
           {result && (
             <TabsList>
-              <TabsTrigger value="local">
-                Only Local
-                {result.only_local.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{result.only_local.length}</Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="cloud">
-                Only Cloud
-                {result.only_cloud.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">{result.only_cloud.length}</Badge>
-                )}
-              </TabsTrigger>
               <TabsTrigger value="matched">
                 In Sync
                 {result.matched.length > 0 && (
                   <Badge variant="secondary" className="ml-2">{result.matched.length}</Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="local">
+                Local Only
+                {result.only_local.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{result.only_local.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="cloud">
+                Cloud Only
+                {result.only_cloud.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{result.only_cloud.length}</Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="conflicts">
                 Conflicts
                 {result.conflicts.length > 0 && (
                   <Badge className="ml-2 bg-orange-500 hover:bg-orange-600">{result.conflicts.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="skipped">
+                Skipped
+                {skipped.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{skipped.length}</Badge>
                 )}
               </TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
@@ -502,6 +573,9 @@ export function CloudSyncPage() {
             </TabsContent>
             <TabsContent value="conflicts" className="mt-4">
               <ConflictsTab conflicts={result.conflicts} onDecision={handleDecision} deciding={deciding} />
+            </TabsContent>
+            <TabsContent value="skipped" className="mt-4">
+              <SkippedTab entries={skipped} />
             </TabsContent>
             <TabsContent value="history" className="mt-4">
               <HistoryTab decisions={decisions} />
